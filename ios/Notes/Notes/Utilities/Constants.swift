@@ -2,10 +2,11 @@ import Foundation
 
 enum Constants {
     enum API {
-        // Configure these with your actual backend URL
-        // For simulator: http://localhost:8088
-        // For physical device: http://192.168.1.75:8088
-        static let baseURL = "http://192.168.1.75:8088"
+        // Production URL
+        static let baseURL = "https://notes.hamishgilbert.com/api"
+        // Development URLs:
+        // - Simulator: http://localhost:8088
+        // - Physical device on local network: http://192.168.1.75:8088
         static let version = "v1"
     }
 
