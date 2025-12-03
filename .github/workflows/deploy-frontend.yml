@@ -44,3 +44,12 @@ jobs:
           target: "/mnt/user/appdata/notes-app/frontend/"
           strip_components: 3
           rm: true
+
+      - name: Restart nginx to pick up new files
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: docker restart multi-site-nginx
