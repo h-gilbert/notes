@@ -2,7 +2,7 @@
   <div class="archive">
     <h1 class="page-title">Archive</h1>
 
-    <NotesList
+    <MasonryNotesList
       v-if="archivedNotes.length > 0"
       :notes="archivedNotes"
       :is-archived="true"

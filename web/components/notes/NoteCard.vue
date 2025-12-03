@@ -156,10 +156,10 @@ onMounted(() => {
   font-size: 14px;
   color: var(--color-text-secondary);
   line-height: 1.5;
-  display: -webkit-box;
-  -webkit-line-clamp: 8;
-  -webkit-box-orient: vertical;
+  max-height: 200px;
   overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .checklist-preview {

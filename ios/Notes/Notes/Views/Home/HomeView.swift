@@ -3,6 +3,7 @@ import SwiftData
 
 struct HomeView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     @Query(
         filter: #Predicate<Note> { !$0.isArchived },
@@ -15,10 +16,14 @@ struct HomeView: View {
     @State private var newNote: Note?
     @State private var showingArchive = false
     @State private var showingSettings = false
-    @State private var isRearranging = false
+    @State private var isReorderMode = false
     @State private var syncService = SyncService.shared
 
     @Namespace private var animation
+
+    private var columnCount: Int {
+        sizeClass == .compact ? 2 : 3
+    }
 
     private var pinnedNotes: [Note] {
         allNotes.filter { $0.isPinned }
@@ -38,41 +43,68 @@ struct HomeView: View {
                 if allNotes.isEmpty {
                     emptyStateView
                         .padding(.bottom, 100)
-                } else {
+                } else if isReorderMode {
+                    // Reorder mode - single column list with drag handles
                     List {
                         if !pinnedNotes.isEmpty {
                             Section {
                                 ForEach(pinnedNotes) { note in
-                                    noteCard(for: note)
+                                    reorderRow(for: note)
                                 }
                                 .onMove(perform: movePinnedNotes)
                             } header: {
-                                pinnedSectionHeader
+                                Text("PINNED")
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                    .foregroundColor(Theme.Colors.accent)
                             }
-                            .listSectionSeparator(.hidden)
                         }
 
                         if !unpinnedNotes.isEmpty {
                             Section {
                                 ForEach(unpinnedNotes) { note in
-                                    noteCard(for: note)
+                                    reorderRow(for: note)
                                 }
                                 .onMove(perform: moveUnpinnedNotes)
                             } header: {
-                                if !pinnedNotes.isEmpty {
-                                    othersSectionHeader
-                                }
+                                Text("NOTES")
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .foregroundColor(Theme.Colors.textTertiary)
                             }
-                            .listSectionSeparator(.hidden)
                         }
                     }
-                    .listStyle(.plain)
+                    .listStyle(.insetGrouped)
                     .scrollContentBackground(.hidden)
+                    .background(Theme.Colors.background)
+                    .environment(\.editMode, .constant(.active))
+                } else {
+                    // Normal masonry view
+                    ScrollView {
+                        VStack(spacing: Theme.Spacing.lg) {
+                            if !pinnedNotes.isEmpty {
+                                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                                    pinnedSectionHeader
+                                    MasonryGrid(data: pinnedNotes, columns: columnCount, spacing: Theme.Spacing.sm) { note in
+                                        noteCard(for: note)
+                                    }
+                                }
+                            }
+
+                            if !unpinnedNotes.isEmpty {
+                                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                                    if !pinnedNotes.isEmpty {
+                                        othersSectionHeader
+                                    }
+                                    MasonryGrid(data: unpinnedNotes, columns: columnCount, spacing: Theme.Spacing.sm) { note in
+                                        noteCard(for: note)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.bottom, 100)
+                    }
                     .animation(.spring(response: 0.4, dampingFraction: 0.8), value: pinnedNotes.map(\.id))
                     .animation(.spring(response: 0.4, dampingFraction: 0.8), value: unpinnedNotes.map(\.id))
-                    .environment(\.editMode, .constant(isRearranging ? .active : .inactive))
-                    .contentMargins(.horizontal, Theme.Spacing.md, for: .scrollContent)
-                    .contentMargins(.bottom, 100, for: .scrollContent)
                 }
 
                 createNoteBar
@@ -91,27 +123,25 @@ struct HomeView: View {
                 }
 
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    if isRearranging {
+                    if !allNotes.isEmpty {
                         Button {
-                            withAnimation(Theme.Animation.gentle) {
-                                isRearranging = false
+                            withAnimation {
+                                isReorderMode.toggle()
                             }
                         } label: {
-                            Text("Done")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(Theme.Colors.accent)
-                        }
-                    } else {
-                        Button {
-                            withAnimation(Theme.Animation.gentle) {
-                                isRearranging = true
+                            if isReorderMode {
+                                Text("Done")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(Theme.Colors.accent)
+                            } else {
+                                Image(systemName: "arrow.up.arrow.down")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(Theme.Colors.textSecondary)
                             }
-                        } label: {
-                            Image(systemName: "arrow.up.arrow.down")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(Theme.Colors.textSecondary)
                         }
+                    }
 
+                    if !isReorderMode {
                         Button {
                             showingArchive = true
                         } label: {
@@ -233,24 +263,35 @@ struct HomeView: View {
             .matchedGeometryEffect(id: note.id, in: animation)
             .contentShape(Rectangle())
             .onTapGesture {
-                if !isRearranging {
-                    selectedNote = note
-                }
+                selectedNote = note
             }
-            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            .contextMenu {
+                Button {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        note.isPinned.toggle()
+                        note.touch()
+                    }
+                    Task {
+                        await syncService.sync()
+                    }
+                } label: {
+                    Label(
+                        note.isPinned ? "Unpin" : "Pin",
+                        systemImage: note.isPinned ? "pin.slash" : "pin"
+                    )
+                }
+
                 Button {
                     withAnimation(Theme.Animation.gentle) {
                         note.isArchived = true
                         note.touch()
                     }
-                    // Sync immediately to server
                     Task {
                         await syncService.sync()
                     }
                 } label: {
                     Label("Archive", systemImage: "archivebox")
                 }
-                .tint(.orange)
 
                 Button(role: .destructive) {
                     withAnimation(Theme.Animation.gentle) {
@@ -260,27 +301,6 @@ struct HomeView: View {
                     Label("Delete", systemImage: "trash")
                 }
             }
-            .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                Button {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        note.isPinned.toggle()
-                        note.touch()
-                    }
-                    // Sync immediately to server
-                    Task {
-                        await syncService.sync()
-                    }
-                } label: {
-                    Label(
-                        note.isPinned ? "Unpin" : "Pin",
-                        systemImage: note.isPinned ? "pin.slash.fill" : "pin.fill"
-                    )
-                }
-                .tint(Theme.Colors.accent)
-            }
-            .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: Theme.Spacing.xs, leading: 0, bottom: Theme.Spacing.xs, trailing: 0))
-            .listRowBackground(Theme.Colors.background)
     }
 
     // MARK: - Create Note Bar
@@ -389,6 +409,67 @@ struct HomeView: View {
         .padding(.top, 80)
     }
 
+    // MARK: - Reorder Row
+
+    @ViewBuilder
+    private func reorderRow(for note: Note) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(note.title.isEmpty ? "Untitled" : note.title)
+                    .font(.headline)
+                    .foregroundColor(Theme.Colors.textPrimary)
+                if !note.content.isEmpty {
+                    Text(note.content)
+                        .font(.caption)
+                        .foregroundColor(Theme.Colors.textSecondary)
+                        .lineLimit(1)
+                } else if note.noteType == .checklist {
+                    let itemCount = note.checklistItems?.count ?? 0
+                    Text("\(itemCount) item\(itemCount == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundColor(Theme.Colors.textTertiary)
+                }
+            }
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+
+    // MARK: - Reorder Actions
+
+    private func movePinnedNotes(from source: IndexSet, to destination: Int) {
+        var reorderedNotes = pinnedNotes
+        reorderedNotes.move(fromOffsets: source, toOffset: destination)
+
+        for (index, note) in reorderedNotes.enumerated() {
+            let newSortOrder = -(reorderedNotes.count - index)
+            if note.sortOrder != newSortOrder {
+                note.sortOrder = newSortOrder
+                note.touch()
+            }
+        }
+
+        Task {
+            await syncService.sync()
+        }
+    }
+
+    private func moveUnpinnedNotes(from source: IndexSet, to destination: Int) {
+        var reorderedNotes = unpinnedNotes
+        reorderedNotes.move(fromOffsets: source, toOffset: destination)
+
+        for (index, note) in reorderedNotes.enumerated() {
+            if note.sortOrder != index {
+                note.sortOrder = index
+                note.touch()
+            }
+        }
+
+        Task {
+            await syncService.sync()
+        }
+    }
+
     // MARK: - Actions
 
     private func createNewNote(ofType noteType: NoteType = .note) {
@@ -402,44 +483,6 @@ struct HomeView: View {
         isCreatingNote = true
     }
 
-    /// Reorder pinned notes only within the pinned section
-    private func movePinnedNotes(from source: IndexSet, to destination: Int) {
-        var reorderedNotes = pinnedNotes
-        reorderedNotes.move(fromOffsets: source, toOffset: destination)
-
-        // Use negative sortOrder for pinned notes to keep them separate from unpinned
-        for (index, note) in reorderedNotes.enumerated() {
-            let newSortOrder = -(reorderedNotes.count - index)
-            if note.sortOrder != newSortOrder {
-                note.sortOrder = newSortOrder
-                note.touch()
-            }
-        }
-
-        // Sync immediately to server
-        Task {
-            await syncService.sync()
-        }
-    }
-
-    /// Reorder unpinned notes only within the unpinned section
-    private func moveUnpinnedNotes(from source: IndexSet, to destination: Int) {
-        var reorderedNotes = unpinnedNotes
-        reorderedNotes.move(fromOffsets: source, toOffset: destination)
-
-        // Use positive sortOrder for unpinned notes
-        for (index, note) in reorderedNotes.enumerated() {
-            if note.sortOrder != index {
-                note.sortOrder = index
-                note.touch()
-            }
-        }
-
-        // Sync immediately to server
-        Task {
-            await syncService.sync()
-        }
-    }
 }
 
 #Preview {

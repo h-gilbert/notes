@@ -4,6 +4,7 @@ import SwiftData
 struct ArchivedNotesView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     @Query(
         filter: #Predicate<Note> { $0.isArchived },
@@ -14,20 +15,37 @@ struct ArchivedNotesView: View {
     @State private var selectedNote: Note?
     @State private var syncService = SyncService.shared
 
+    private var columnCount: Int {
+        sizeClass == .compact ? 2 : 3
+    }
+
     var body: some View {
         NavigationStack {
             Group {
                 if archivedNotes.isEmpty {
                     emptyState
                 } else {
-                    List {
-                        ForEach(archivedNotes) { note in
+                    ScrollView {
+                        MasonryGrid(data: archivedNotes, columns: columnCount, spacing: Theme.Spacing.sm) { note in
                             NoteCardView(note: note)
                                 .opacity(0.8)
+                                .contentShape(Rectangle())
                                 .onTapGesture {
                                     selectedNote = note
                                 }
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                .contextMenu {
+                                    Button {
+                                        withAnimation {
+                                            note.isArchived = false
+                                            note.touch()
+                                        }
+                                        Task {
+                                            await syncService.sync()
+                                        }
+                                    } label: {
+                                        Label("Unarchive", systemImage: "tray.and.arrow.up")
+                                    }
+
                                     Button(role: .destructive) {
                                         withAnimation {
                                             modelContext.delete(note)
@@ -36,28 +54,10 @@ struct ArchivedNotesView: View {
                                         Label("Delete", systemImage: "trash")
                                     }
                                 }
-                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                    Button {
-                                        withAnimation {
-                                            note.isArchived = false
-                                            note.touch()
-                                        }
-                                        // Sync immediately to server
-                                        Task {
-                                            await syncService.sync()
-                                        }
-                                    } label: {
-                                        Label("Unarchive", systemImage: "tray.and.arrow.up")
-                                    }
-                                    .tint(.green)
-                                }
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                         }
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.md)
                     }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
                 }
             }
             .navigationTitle("Archive")

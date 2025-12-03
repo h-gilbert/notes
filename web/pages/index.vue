@@ -1,23 +1,58 @@
 <template>
   <div class="home">
-    <!-- Pinned section -->
-    <section v-if="pinnedNotes.length > 0" class="section">
-      <div class="section-header">
-        <svg class="pin-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6l1 1 1-1v-6h5v-2l-2-2z"/>
+    <!-- Reorder mode toggle -->
+    <div v-if="pinnedNotes.length > 0 || unpinnedNotes.length > 0" class="reorder-toggle">
+      <button @click="isReorderMode = !isReorderMode" class="reorder-btn">
+        <svg v-if="!isReorderMode" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M3 15h18v-2H3v2zm0 4h18v-2H3v2zm0-8h18V9H3v2zm0-6v2h18V5H3z"/>
         </svg>
-        <span class="section-label">PINNED</span>
-      </div>
-      <NotesList :notes="pinnedNotes" @select="openNote" @update="handleUpdate" @reorder="handleReorder" />
-    </section>
+        <span>{{ isReorderMode ? 'Done' : 'Reorder' }}</span>
+      </button>
+    </div>
 
-    <!-- Notes section -->
-    <section v-if="unpinnedNotes.length > 0" class="section">
-      <div v-if="pinnedNotes.length > 0" class="section-header">
-        <span class="section-label text-tertiary">NOTES</span>
+    <!-- Reorder mode view -->
+    <template v-if="isReorderMode">
+      <div class="reorder-mode">
+        <section v-if="pinnedNotes.length > 0" class="section">
+          <div class="section-header">
+            <svg class="pin-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6l1 1 1-1v-6h5v-2l-2-2z"/>
+            </svg>
+            <span class="section-label">PINNED</span>
+          </div>
+          <NotesList :notes="pinnedNotes" @select="openNote" @update="handleUpdate" @reorder="handleReorderPinned" />
+        </section>
+
+        <section v-if="unpinnedNotes.length > 0" class="section">
+          <div class="section-header">
+            <span class="section-label text-tertiary">NOTES</span>
+          </div>
+          <NotesList :notes="unpinnedNotes" @select="openNote" @update="handleUpdate" @reorder="handleReorderUnpinned" />
+        </section>
       </div>
-      <NotesList :notes="unpinnedNotes" @select="openNote" @update="handleUpdate" @reorder="handleReorder" />
-    </section>
+    </template>
+
+    <!-- Normal mosaic view -->
+    <template v-else>
+      <!-- Pinned section -->
+      <section v-if="pinnedNotes.length > 0" class="section">
+        <div class="section-header">
+          <svg class="pin-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6l1 1 1-1v-6h5v-2l-2-2z"/>
+          </svg>
+          <span class="section-label">PINNED</span>
+        </div>
+        <MasonryNotesList :notes="pinnedNotes" @select="openNote" @update="handleUpdate" />
+      </section>
+
+      <!-- Notes section -->
+      <section v-if="unpinnedNotes.length > 0" class="section">
+        <div v-if="pinnedNotes.length > 0" class="section-header">
+          <span class="section-label text-tertiary">NOTES</span>
+        </div>
+        <MasonryNotesList :notes="unpinnedNotes" @select="openNote" @update="handleUpdate" />
+      </section>
+    </template>
 
     <!-- Empty state -->
     <div v-if="pinnedNotes.length === 0 && unpinnedNotes.length === 0" class="empty-state">
@@ -53,6 +88,7 @@ definePageMeta({
 const notesStore = useNotesStore()
 
 const selectedNote = ref<Note | null>(null)
+const isReorderMode = ref(false)
 
 const pinnedNotes = computed(() => notesStore.pinnedNotes)
 const unpinnedNotes = computed(() => notesStore.unpinnedNotes)
@@ -93,7 +129,11 @@ const handleUpdate = async (note: Note) => {
   await notesStore.updateNote(note)
 }
 
-const handleReorder = async (notes: Note[]) => {
+const handleReorderPinned = async (notes: Note[]) => {
+  await notesStore.reorderNotes(notes)
+}
+
+const handleReorderUnpinned = async (notes: Note[]) => {
   await notesStore.reorderNotes(notes)
 }
 </script>
@@ -144,5 +184,37 @@ const handleReorder = async (notes: Note[]) => {
 
 .empty-state p {
   color: var(--color-text-secondary);
+}
+
+.reorder-toggle {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--spacing-md);
+}
+
+.reorder-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-small);
+  transition: all 0.2s ease;
+}
+
+.reorder-btn:hover {
+  background-color: var(--color-background-secondary);
+  color: var(--color-text-primary);
+}
+
+.reorder-btn svg {
+  color: var(--color-text-tertiary);
+}
+
+.reorder-mode {
+  max-width: 600px;
+  margin: 0 auto;
 }
 </style>
