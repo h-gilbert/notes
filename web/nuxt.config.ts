@@ -1,0 +1,39 @@
+export default defineNuxtConfig({
+  ssr: false,
+
+  devtools: { enabled: true },
+
+  modules: ['@pinia/nuxt'],
+
+  components: {
+    dirs: [
+      {
+        path: '~/components',
+        pathPrefix: false
+      }
+    ]
+  },
+
+  css: ['~/assets/css/main.css'],
+
+  app: {
+    head: {
+      title: 'Notes',
+      meta: [
+        { name: 'description', content: 'A simple notes application' },
+        { name: 'viewport', content: 'width=device-width, initial-scale=1' }
+      ],
+      link: [
+        { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' }
+      ]
+    }
+  },
+
+  runtimeConfig: {
+    public: {
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8080'
+    }
+  },
+
+  compatibilityDate: '2024-01-01'
+})
