@@ -1,0 +1,73 @@
+name: Deploy All
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_frontend:
+        description: 'Deploy frontend'
+        required: true
+        default: true
+        type: boolean
+      deploy_backend:
+        description: 'Deploy backend'
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  deploy-backend:
+    if: ${{ inputs.deploy_backend }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy backend to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            cd /mnt/user/appdata/notes-app/repo
+            git pull origin main
+            cp -r backend/cmd backend/internal backend/pkg backend/go.mod backend/Dockerfile /mnt/user/appdata/notes-app/backend/
+            cd /mnt/user/appdata/notes-app/backend
+            docker compose build
+            docker compose up -d
+            sleep 5
+            docker ps | grep notes-api
+
+  deploy-frontend:
+    if: ${{ inputs.deploy_frontend }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: web
+        env:
+          NUXT_PUBLIC_API_BASE: https://notes.hamishgilbert.com
+        run: npm run generate
+
+      - name: Deploy to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: "web/.output/public/*"
+          target: "/mnt/user/appdata/notes-app/frontend/"
+          strip_components: 3
+          rm: true
