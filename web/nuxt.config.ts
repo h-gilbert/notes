@@ -20,7 +20,7 @@ export default defineNuxtConfig({
     head: {
       title: 'Notes',
       meta: [
-        { name: 'description', content: 'A simple notes application' },
+        { name: 'description', content: 'A simple notes application with sync' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' }
       ],
       link: [
