@@ -52,4 +52,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
-          script: docker restart multi-site-nginx
+          script: |
+            docker restart multi-site-nginx
+            sleep 2
+            echo "Nginx restarted successfully"
