@@ -2,8 +2,8 @@ import Foundation
 
 enum Constants {
     enum API {
-        // Production URL
-        static let baseURL = "https://notes.hamishgilbert.com/api"
+        // Production URL (endpoints already include /api)
+        static let baseURL = "https://notes.hamishgilbert.com"
         // Development URLs:
         // - Simulator: http://localhost:8088
         // - Physical device on local network: http://192.168.1.75:8088
