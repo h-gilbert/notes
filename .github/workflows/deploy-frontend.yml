@@ -46,15 +46,8 @@ jobs:
           rm: true
 
       - name: Restart nginx to pick up new files
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT }}
-          script_stop: true
-          script: |
-            docker restart multi-site-nginx
-            sleep 2
-            echo "Nginx restarted successfully"
-            exit 0
+        run: |
+          echo "${{ secrets.SERVER_SSH_KEY }}" > /tmp/ssh_key
+          chmod 600 /tmp/ssh_key
+          ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} 'docker restart multi-site-nginx && sleep 2 && echo "Nginx restarted successfully"'
+          rm /tmp/ssh_key

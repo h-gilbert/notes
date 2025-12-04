@@ -14,26 +14,17 @@ jobs:
 
     steps:
       - name: Deploy to server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT }}
-          script_stop: true
-          script: |
-            cd /mnt/user/appdata/notes-app/repo
-            git pull origin main
-
-            # Copy updated backend files
-            cp -r backend/cmd backend/internal backend/pkg backend/go.mod backend/Dockerfile /mnt/user/appdata/notes-app/backend/
-
-            # Rebuild and restart
-            cd /mnt/user/appdata/notes-app/backend
-            docker compose build
-            docker compose up -d
-
-            # Verify deployment
-            sleep 5
+        run: |
+          echo "${{ secrets.SERVER_SSH_KEY }}" > /tmp/ssh_key
+          chmod 600 /tmp/ssh_key
+          ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} '
+            cd /mnt/user/appdata/notes-app/repo &&
+            git pull origin main &&
+            cp -r backend/cmd backend/internal backend/pkg backend/go.mod backend/Dockerfile /mnt/user/appdata/notes-app/backend/ &&
+            cd /mnt/user/appdata/notes-app/backend &&
+            docker compose build &&
+            docker compose up -d &&
+            sleep 5 &&
             docker ps | grep notes-api
-            exit 0
+          '
+          rm /tmp/ssh_key
