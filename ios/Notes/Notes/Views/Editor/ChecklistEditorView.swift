@@ -263,7 +263,7 @@ struct ChecklistEditorView: View {
 
     private var archiveButton: some View {
         Button {
-            withAnimation(Theme.Animation.gentle) {
+            withAnimation(Theme.Animation.smooth) {
                 note.isArchived = true
                 note.touch()
             }
@@ -275,7 +275,7 @@ struct ChecklistEditorView: View {
 
     private var deleteCheckedButton: some View {
         Button {
-            withAnimation(Theme.Animation.gentle) {
+            withAnimation(Theme.Animation.smooth) {
                 for item in note.checkedItems {
                     modelContext.delete(item)
                 }
@@ -316,7 +316,7 @@ struct ChecklistEditorView: View {
     }
 
     private func deleteItem(_ item: ChecklistItem) {
-        withAnimation(Theme.Animation.gentle) {
+        withAnimation(Theme.Animation.smooth) {
             modelContext.delete(item)
             note.touch()
         }
@@ -339,8 +339,20 @@ struct ChecklistEditorView: View {
     }
 
     private func saveAndDismiss() {
-        if !note.isValid && isNewNote {
-            modelContext.delete(note)
+        // Save any pending text in the add item field
+        if !newItemText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            addNewItem()
+        }
+
+        if !note.isValid {
+            if isNewNote {
+                // Delete empty new notes
+                modelContext.delete(note)
+            } else {
+                // Archive existing notes that become empty
+                note.isArchived = true
+                note.touch()
+            }
         }
         // Sync changes to server immediately
         Task {

@@ -205,7 +205,7 @@ struct NoteEditorView: View {
 
     private var archiveButton: some View {
         Button {
-            withAnimation(Theme.Animation.gentle) {
+            withAnimation(Theme.Animation.smooth) {
                 note.isArchived = true
                 note.touch()
             }
@@ -225,8 +225,15 @@ struct NoteEditorView: View {
     }
 
     private func saveAndDismiss() {
-        if !note.isValid && isNewNote {
-            modelContext.delete(note)
+        if !note.isValid {
+            if isNewNote {
+                // Delete empty new notes
+                modelContext.delete(note)
+            } else {
+                // Archive existing notes that become empty
+                note.isArchived = true
+                note.touch()
+            }
         }
         // Sync changes to server immediately
         Task {

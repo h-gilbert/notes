@@ -29,6 +29,7 @@ defineEmits<{
   padding: var(--spacing-md);
   background: linear-gradient(transparent, var(--color-background) 30%);
   pointer-events: none;
+  z-index: 100;
 }
 
 .create-bar {

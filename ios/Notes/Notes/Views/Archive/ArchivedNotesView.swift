@@ -35,7 +35,7 @@ struct ArchivedNotesView: View {
                                 }
                                 .contextMenu {
                                     Button {
-                                        withAnimation {
+                                        withAnimation(Theme.Animation.smooth) {
                                             note.isArchived = false
                                             note.touch()
                                         }
@@ -47,7 +47,7 @@ struct ArchivedNotesView: View {
                                     }
 
                                     Button(role: .destructive) {
-                                        withAnimation {
+                                        withAnimation(Theme.Animation.smooth) {
                                             modelContext.delete(note)
                                         }
                                     } label: {
@@ -55,6 +55,7 @@ struct ArchivedNotesView: View {
                                     }
                                 }
                         }
+                        .animation(Theme.Animation.smooth, value: archivedNotes.map(\.id))
                         .padding(.horizontal, Theme.Spacing.md)
                         .padding(.vertical, Theme.Spacing.md)
                     }

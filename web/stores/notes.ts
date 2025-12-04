@@ -69,6 +69,7 @@ export const useNotesStore = defineStore('notes', {
       const now = new Date().toISOString()
       const id = crypto.randomUUID()
 
+      // New notes should appear at the top of the unpinned section
       const note: Note = {
         id,
         title: noteData.title ?? '',
@@ -76,7 +77,7 @@ export const useNotesStore = defineStore('notes', {
         noteType: noteData.noteType ?? 'note',
         isPinned: noteData.isPinned ?? false,
         isArchived: false,
-        sortOrder: this.getMaxSortOrder() + 1,
+        sortOrder: this.getMinUnpinnedSortOrder() - 1,
         createdAt: now,
         updatedAt: now,
         checklistItems: noteData.checklistItems ?? [],
@@ -235,6 +236,12 @@ export const useNotesStore = defineStore('notes', {
     getMaxSortOrder(): number {
       if (this.notes.length === 0) return -1
       return Math.max(...this.notes.map(n => n.sortOrder))
+    },
+
+    getMinUnpinnedSortOrder(): number {
+      const unpinned = this.notes.filter(n => !n.isPinned && !n.isArchived)
+      if (unpinned.length === 0) return 0
+      return Math.min(...unpinned.map(n => n.sortOrder))
     },
 
     noteToDTO(note: Note): NoteDTO {

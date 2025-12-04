@@ -9,31 +9,21 @@ struct NoteCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            // Title row with optional pin badge
-            if !note.title.isEmpty || note.isPinned {
-                HStack(alignment: .top, spacing: Theme.Spacing.xs) {
-                    if !note.title.isEmpty {
-                        Text(note.title)
-                            .font(Theme.Typography.headline())
-                            .foregroundColor(Theme.Colors.textPrimary)
-                            .lineLimit(2)
-                    }
-
-                    Spacer(minLength: 0)
-
-                    if note.isPinned {
-                        pinnedBadge
-                    }
-                }
+            // Title
+            if !note.title.isEmpty {
+                Text(note.title)
+                    .font(Theme.Typography.headline())
+                    .foregroundColor(Theme.Colors.textPrimary)
+                    .lineLimit(2)
             }
 
             if note.noteType == .checklist {
                 checklistPreview
             } else if !note.content.isEmpty {
                 Text(note.content)
-                    .font(Theme.Typography.bodySmall())
-                    .foregroundColor(Theme.Colors.textSecondary)
-                    .lineLimit(8)
+                    .font(note.title.isEmpty ? Theme.Typography.body() : Theme.Typography.bodySmall())
+                    .foregroundColor(note.title.isEmpty ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
+                    .lineLimit(note.title.isEmpty ? 12 : 8)
                     .lineSpacing(2)
             }
         }
@@ -69,25 +59,6 @@ struct NoteCardView: View {
         )
         .shadow(color: note.isPinned ? Theme.Colors.accent.opacity(0.15) : Theme.Colors.shadowLight, radius: 8, x: 0, y: 4)
         .shadow(color: Theme.Colors.shadowMedium, radius: 2, x: 0, y: 1)
-    }
-
-    // MARK: - Pinned Badge
-
-    private var pinnedBadge: some View {
-        HStack(spacing: 3) {
-            Image(systemName: "pin.fill")
-                .font(.system(size: 8, weight: .bold))
-            Text("PINNED")
-                .font(.system(size: 8, weight: .bold, design: .rounded))
-                .tracking(0.5)
-        }
-        .foregroundColor(Theme.Colors.accent)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
-        .background(
-            Capsule()
-                .fill(Theme.Colors.accent.opacity(0.12))
-        )
     }
 
     @ViewBuilder

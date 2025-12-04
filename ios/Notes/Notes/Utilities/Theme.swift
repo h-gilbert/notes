@@ -94,6 +94,8 @@ enum Theme {
         static let springy = SwiftUI.Animation.spring(response: 0.4, dampingFraction: 0.75)
         static let gentle = SwiftUI.Animation.easeInOut(duration: 0.3)
         static let quick = SwiftUI.Animation.easeOut(duration: 0.2)
+        // Smooth animation for list item removal/addition
+        static let smooth = SwiftUI.Animation.spring(response: 0.35, dampingFraction: 0.85, blendDuration: 0.1)
     }
 }
 

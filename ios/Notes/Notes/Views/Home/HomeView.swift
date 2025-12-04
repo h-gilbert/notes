@@ -86,6 +86,7 @@ struct HomeView: View {
                                     MasonryGrid(data: pinnedNotes, columns: columnCount, spacing: Theme.Spacing.sm) { note in
                                         noteCard(for: note)
                                     }
+                                    .animation(Theme.Animation.smooth, value: pinnedNotes.map(\.id))
                                 }
                             }
 
@@ -97,14 +98,13 @@ struct HomeView: View {
                                     MasonryGrid(data: unpinnedNotes, columns: columnCount, spacing: Theme.Spacing.sm) { note in
                                         noteCard(for: note)
                                     }
+                                    .animation(Theme.Animation.smooth, value: unpinnedNotes.map(\.id))
                                 }
                             }
                         }
                         .padding(.horizontal, Theme.Spacing.md)
                         .padding(.bottom, 100)
                     }
-                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: pinnedNotes.map(\.id))
-                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: unpinnedNotes.map(\.id))
                 }
 
                 createNoteBar
@@ -267,7 +267,7 @@ struct HomeView: View {
             }
             .contextMenu {
                 Button {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    withAnimation(Theme.Animation.smooth) {
                         note.isPinned.toggle()
                         note.touch()
                     }
@@ -282,7 +282,7 @@ struct HomeView: View {
                 }
 
                 Button {
-                    withAnimation(Theme.Animation.gentle) {
+                    withAnimation(Theme.Animation.smooth) {
                         note.isArchived = true
                         note.touch()
                     }
@@ -294,7 +294,7 @@ struct HomeView: View {
                 }
 
                 Button(role: .destructive) {
-                    withAnimation(Theme.Animation.gentle) {
+                    withAnimation(Theme.Animation.smooth) {
                         modelContext.delete(note)
                     }
                 } label: {
@@ -473,10 +473,11 @@ struct HomeView: View {
     // MARK: - Actions
 
     private func createNewNote(ofType noteType: NoteType = .note) {
-        let maxSortOrder = allNotes.map(\.sortOrder).max() ?? -1
+        // New notes should appear at the top of the unpinned section
+        let minSortOrder = unpinnedNotes.map(\.sortOrder).min() ?? 0
         let note = Note(
             noteType: noteType,
-            sortOrder: maxSortOrder + 1
+            sortOrder: minSortOrder - 1
         )
         modelContext.insert(note)
         newNote = note

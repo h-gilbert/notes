@@ -169,6 +169,11 @@ const markDirty = () => {
 }
 
 const handleClose = () => {
+  // Save any pending text in the add item field
+  if (newItemText.value.trim()) {
+    addItem()
+  }
+
   if (isNoteEmpty.value) {
     // Delete empty notes instead of saving them
     emit('delete', localNote.value)
@@ -244,6 +249,15 @@ const deleteItem = (id: string) => {
   }
 }
 
+// Handle keyboard shortcuts
+const handleKeydown = (e: KeyboardEvent) => {
+  // CMD/CTRL + Enter to save
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    e.preventDefault()
+    handleClose()
+  }
+}
+
 // Close menu on outside click
 onMounted(() => {
   document.addEventListener('click', (e) => {
@@ -251,6 +265,11 @@ onMounted(() => {
       showMenu.value = false
     }
   })
+  document.addEventListener('keydown', handleKeydown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown)
 })
 </script>
 

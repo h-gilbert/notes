@@ -24,6 +24,10 @@ struct MasonryGrid<Data, Content>: View where Data: RandomAccessCollection, Data
                 LazyVStack(spacing: spacing) {
                     ForEach(itemsForColumn(columnIndex)) { item in
                         content(item)
+                            .transition(.asymmetric(
+                                insertion: .scale(scale: 0.8).combined(with: .opacity),
+                                removal: .scale(scale: 0.8).combined(with: .opacity)
+                            ))
                     }
                 }
                 .frame(maxWidth: .infinity)

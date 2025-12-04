@@ -1,13 +1,5 @@
 <template>
   <div class="note-card card" :class="{ 'menu-open': showMenu }" @click="$emit('select', note)">
-    <!-- Pin indicator -->
-    <div v-if="note.isPinned" class="pin-badge">
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6l1 1 1-1v-6h5v-2l-2-2z"/>
-      </svg>
-      <span>PINNED</span>
-    </div>
-
     <!-- Title -->
     <h3 v-if="note.title" class="title">{{ note.title }}</h3>
 
@@ -33,7 +25,7 @@
         {{ checkedItems.length }} completed
       </div>
     </div>
-    <p v-else-if="note.content" class="content">{{ note.content }}</p>
+    <p v-else-if="note.content" class="content" :class="{ 'content-only': !note.title }">{{ note.content }}</p>
 
     <!-- Context menu trigger -->
     <button class="menu-btn" @click.stop="showMenu = !showMenu">
@@ -90,17 +82,26 @@ const handlePin = async () => {
 
 const handleArchive = async () => {
   showMenu.value = false
+  const scrollY = window.scrollY
   await notesStore.archiveNote(props.note)
+  await nextTick()
+  window.scrollTo(0, scrollY)
 }
 
 const handleUnarchive = async () => {
   showMenu.value = false
+  const scrollY = window.scrollY
   await notesStore.unarchiveNote(props.note)
+  await nextTick()
+  window.scrollTo(0, scrollY)
 }
 
 const handleDelete = async () => {
   showMenu.value = false
+  const scrollY = window.scrollY
   await notesStore.deleteNote(props.note.id)
+  await nextTick()
+  window.scrollTo(0, scrollY)
 }
 
 // Close menu when clicking outside
@@ -131,16 +132,6 @@ onMounted(() => {
     0 2px 4px var(--color-shadow-medium);
 }
 
-.pin-badge {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--color-accent);
-  margin-bottom: var(--spacing-xs);
-}
-
 .title {
   font-size: 17px;
   font-weight: 600;
@@ -156,10 +147,18 @@ onMounted(() => {
   font-size: 14px;
   color: var(--color-text-secondary);
   line-height: 1.5;
-  max-height: 200px;
+  display: -webkit-box;
+  -webkit-line-clamp: 10;
+  -webkit-box-orient: vertical;
   overflow: hidden;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.content.content-only {
+  font-size: 16px;
+  color: var(--color-text-primary);
+  -webkit-line-clamp: 12;
 }
 
 .checklist-preview {
