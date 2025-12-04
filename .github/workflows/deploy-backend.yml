@@ -20,6 +20,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
+          script_stop: true
           script: |
             cd /mnt/user/appdata/notes-app/repo
             git pull origin main
@@ -35,3 +36,4 @@ jobs:
             # Verify deployment
             sleep 5
             docker ps | grep notes-api
+            exit 0

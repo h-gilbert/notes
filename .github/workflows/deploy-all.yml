@@ -26,6 +26,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
+          script_stop: true
           script: |
             cd /mnt/user/appdata/notes-app/repo
             git pull origin main
@@ -35,6 +36,7 @@ jobs:
             docker compose up -d
             sleep 5
             docker ps | grep notes-api
+            exit 0
 
   deploy-frontend:
     if: ${{ inputs.deploy_frontend }}
@@ -79,7 +81,9 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
+          script_stop: true
           script: |
             docker restart multi-site-nginx
             sleep 2
             echo "Nginx restarted successfully"
+            exit 0
