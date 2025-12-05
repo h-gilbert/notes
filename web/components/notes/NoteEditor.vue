@@ -426,7 +426,7 @@ onUnmounted(() => {
 
 .checklist-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--spacing-sm);
   padding: var(--spacing-xs) 0;
 }
@@ -442,6 +442,7 @@ onUnmounted(() => {
   justify-content: center;
   color: white;
   opacity: 0.6;
+  margin-top: 2px;
 }
 
 .checkbox.checked {
@@ -457,6 +458,9 @@ onUnmounted(() => {
   flex: 1;
   font-size: 16px;
   color: var(--color-text-primary);
+  overflow-wrap: break-word;
+  word-break: break-word;
+  line-height: 1.5;
 }
 
 .checklist-row.checked .item-input {

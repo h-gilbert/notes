@@ -24,7 +24,7 @@ struct ChecklistItemRow: View {
     }
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.sm) {
+        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
             Button(action: onToggle) {
                 ZStack {
                     Circle()
@@ -46,9 +46,11 @@ struct ChecklistItemRow: View {
                 }
             }
             .buttonStyle(.plain)
+            .padding(.top, 2)
 
-            TextField("", text: $item.text)
+            TextField("", text: $item.text, axis: .vertical)
                 .font(Theme.Typography.body())
+                .lineLimit(1...10)
                 .strikethrough(item.isCompleted, color: Theme.Colors.textTertiary)
                 .foregroundColor(item.isCompleted ? Theme.Colors.textTertiary : Theme.Colors.textPrimary)
                 .onChange(of: item.text) { _, _ in
