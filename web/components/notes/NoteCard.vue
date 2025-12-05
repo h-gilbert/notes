@@ -178,6 +178,7 @@ onMounted(() => {
   height: 16px;
   border: 1.5px solid var(--color-accent);
   border-radius: 50%;
+  flex-shrink: 0;
   opacity: 0.6;
 }
 
