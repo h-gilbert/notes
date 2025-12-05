@@ -65,17 +65,15 @@ struct NoteCardView: View {
     private var checklistPreview: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(note.uncheckedItems.prefix(4)) { item in
-                HStack(alignment: .top, spacing: 10) {
+                HStack(spacing: 10) {
                     Circle()
                         .strokeBorder(Theme.Colors.accent.opacity(0.6), lineWidth: 1.5)
                         .frame(width: 16, height: 16)
-                        .padding(.top, 2)
 
                     Text(item.text)
                         .font(Theme.Typography.bodySmall())
                         .foregroundColor(Theme.Colors.textPrimary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1)
                 }
             }
 

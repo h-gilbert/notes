@@ -185,9 +185,9 @@ onMounted(() => {
 .item-text {
   font-size: 14px;
   color: var(--color-text-primary);
-  overflow-wrap: break-word;
-  word-break: break-word;
-  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .more-items {
