@@ -40,6 +40,7 @@
       <!-- Content -->
       <div class="editor-content">
         <input
+          ref="titleInput"
           v-model="localNote.title"
           type="text"
           class="title-input"
@@ -50,6 +51,7 @@
         <!-- Text note content -->
         <textarea
           v-if="localNote.noteType === 'note'"
+          ref="contentInput"
           v-model="localNote.content"
           class="content-input"
           placeholder="Start writing..."
@@ -130,6 +132,7 @@ import type { Note, ChecklistItem } from '~/types'
 const props = defineProps<{
   note: Note
   isArchived?: boolean
+  focusContent?: boolean  // Focus content instead of title (when user started typing)
 }>()
 
 const emit = defineEmits<{
@@ -144,6 +147,8 @@ const localNote = ref<Note>({ ...props.note })
 const showMenu = ref(false)
 const newItemText = ref('')
 const isDirty = ref(false)
+const titleInput = ref<HTMLInputElement | null>(null)
+const contentInput = ref<HTMLTextAreaElement | null>(null)
 
 const uncheckedItems = computed(() =>
   (localNote.value.checklistItems ?? [])
@@ -266,6 +271,19 @@ onMounted(() => {
     }
   })
   document.addEventListener('keydown', handleKeydown)
+
+  // Auto-focus the appropriate input
+  nextTick(() => {
+    if (props.focusContent && contentInput.value) {
+      // Focus content and move cursor to end (user started typing)
+      contentInput.value.focus()
+      const len = contentInput.value.value.length
+      contentInput.value.setSelectionRange(len, len)
+    } else if (titleInput.value) {
+      // Focus title (user clicked to create)
+      titleInput.value.focus()
+    }
+  })
 })
 
 onUnmounted(() => {

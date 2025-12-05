@@ -70,6 +70,7 @@
     <NoteEditor
       v-if="selectedNote"
       :note="selectedNote"
+      :focus-content="focusContent"
       @close="closeNote"
       @save="handleSave"
       @delete="handleDelete"
@@ -88,13 +89,53 @@ definePageMeta({
 const notesStore = useNotesStore()
 
 const selectedNote = ref<Note | null>(null)
+const focusContent = ref(false)
 const isReorderMode = ref(false)
 
 const pinnedNotes = computed(() => notesStore.pinnedNotes)
 const unpinnedNotes = computed(() => notesStore.unpinnedNotes)
 
+// Handle global keydown to start typing a new note
+const handleGlobalKeydown = async (e: KeyboardEvent) => {
+  // Ignore if note editor is already open
+  if (selectedNote.value) return
+
+  // Ignore if user is focused on an input, textarea, or contenteditable
+  const target = e.target as HTMLElement
+  if (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.isContentEditable
+  ) return
+
+  // Ignore modifier keys alone, function keys, and special keys
+  if (
+    e.metaKey || e.ctrlKey || e.altKey ||
+    e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta' ||
+    e.key === 'Tab' || e.key === 'Escape' || e.key === 'Enter' ||
+    e.key === 'Backspace' || e.key === 'Delete' ||
+    e.key.startsWith('Arrow') || e.key.startsWith('F') ||
+    e.key === 'Home' || e.key === 'End' || e.key === 'PageUp' || e.key === 'PageDown'
+  ) return
+
+  // Only proceed with printable characters (single character keys)
+  if (e.key.length !== 1) return
+
+  // Prevent the character from being typed elsewhere
+  e.preventDefault()
+
+  // Create a new note with the initial character
+  const note = await notesStore.createNote({
+    noteType: 'note',
+    content: e.key
+  })
+  openNote(note, true)  // Focus content since user started typing
+}
+
 // Fetch notes on mount
 onMounted(async () => {
+  document.addEventListener('keydown', handleGlobalKeydown)
+
   try {
     await notesStore.fetchNotes()
   } catch (error) {
@@ -102,8 +143,13 @@ onMounted(async () => {
   }
 })
 
-const openNote = (note: Note) => {
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleGlobalKeydown)
+})
+
+const openNote = (note: Note, shouldFocusContent = false) => {
   selectedNote.value = { ...note }
+  focusContent.value = shouldFocusContent
 }
 
 const closeNote = () => {
