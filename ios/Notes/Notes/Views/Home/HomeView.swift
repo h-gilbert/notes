@@ -294,8 +294,15 @@ struct HomeView: View {
                 }
 
                 Button(role: .destructive) {
+                    // Track deletion for sync before deleting
+                    if let serverID = note.serverID {
+                        syncService.markNoteAsDeleted(serverID: serverID)
+                    }
                     withAnimation(Theme.Animation.smooth) {
                         modelContext.delete(note)
+                    }
+                    Task {
+                        await syncService.sync()
                     }
                 } label: {
                     Label("Delete", systemImage: "trash")

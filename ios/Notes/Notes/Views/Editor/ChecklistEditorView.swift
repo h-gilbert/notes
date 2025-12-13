@@ -11,6 +11,8 @@ struct ChecklistEditorView: View {
     @State private var dragOffset: CGFloat = 0
     @State private var newItemText: String = ""
     @State private var syncService = SyncService.shared
+    @State private var addItemRowID = "addItemRow"
+    @State private var keyboardObserver = KeyboardObserver()
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isNewItemFocused: Bool
     @FocusState private var focusedItemID: UUID?
@@ -112,47 +114,84 @@ struct ChecklistEditorView: View {
     }
 
     private func checklistContent(geometry: GeometryProxy) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                titleField
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    titleField
 
-                // Unchecked items
-                VStack(spacing: 2) {
-                    ForEach(note.uncheckedItems) { item in
-                        ChecklistItemRow(
-                            item: item,
-                            accentColor: Theme.Colors.accent,
-                            isFocused: focusedItemID == item.id,
-                            onDelete: { deleteItem(item) },
-                            onToggle: { toggleItem(item) }
-                        )
+                    // Unchecked items
+                    VStack(spacing: 2) {
+                        ForEach(note.uncheckedItems) { item in
+                            ChecklistItemRow(
+                                item: item,
+                                accentColor: Theme.Colors.accent,
+                                isFocused: focusedItemID == item.id,
+                                onDelete: { deleteItem(item) },
+                                onToggle: { toggleItem(item) }
+                            )
+                            .id(item.id)
+                        }
+                        .onMove(perform: moveUncheckedItems)
                     }
-                    .onMove(perform: moveUncheckedItems)
-                }
 
-                // Add item row
-                addItemRow
+                    // Add item row
+                    addItemRow
+                        .id(addItemRowID)
 
-                // Checked items section
-                if !note.checkedItems.isEmpty {
-                    checkedItemsSection
-                }
-
-                // Tappable area to focus add item field
-                Color.clear
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: max(0, geometry.size.height - topPadding - 350))
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        isNewItemFocused = true
+                    // Checked items section
+                    if !note.checkedItems.isEmpty {
+                        checkedItemsSection
                     }
+
+                    // Tappable area to focus add item field
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: max(0, geometry.size.height - topPadding - 350 - keyboardObserver.keyboardHeight))
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            isNewItemFocused = true
+                        }
+                }
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.top, Theme.Spacing.sm)
+                .padding(.bottom, keyboardObserver.keyboardHeight > 0 ? keyboardObserver.keyboardHeight - geometry.safeAreaInsets.bottom : 0)
             }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.top, Theme.Spacing.sm)
+            .scrollDismissesKeyboard(.interactively)
+            .frame(minHeight: geometry.size.height - topPadding - 100)
+            .simultaneousGesture(dismissDragGesture)
+            .onChange(of: keyboardObserver.keyboardHeight) { oldValue, newValue in
+                // When keyboard appears, scroll to show the focused field
+                if newValue > oldValue && isAnyFieldFocused {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        withAnimation {
+                            if isNewItemFocused {
+                                proxy.scrollTo(addItemRowID, anchor: .bottom)
+                            } else if let itemID = focusedItemID {
+                                proxy.scrollTo(itemID, anchor: .center)
+                            }
+                        }
+                    }
+                }
+            }
+            .onChange(of: focusedItemID) { _, itemID in
+                if let itemID = itemID, keyboardObserver.keyboardHeight > 0 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        withAnimation {
+                            proxy.scrollTo(itemID, anchor: .center)
+                        }
+                    }
+                }
+            }
+            .onChange(of: newItemText) { _, _ in
+                if isNewItemFocused && keyboardObserver.keyboardHeight > 0 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            proxy.scrollTo(addItemRowID, anchor: .bottom)
+                        }
+                    }
+                }
+            }
         }
-        .scrollDismissesKeyboard(.interactively)
-        .frame(minHeight: geometry.size.height - topPadding - 100)
-        .simultaneousGesture(dismissDragGesture)
     }
 
     private var dismissDragGesture: some Gesture {
@@ -288,7 +327,14 @@ struct ChecklistEditorView: View {
 
     private var deleteButton: some View {
         Button(role: .destructive) {
+            // Track deletion for sync before deleting
+            if let serverID = note.serverID {
+                syncService.markNoteAsDeleted(serverID: serverID)
+            }
             modelContext.delete(note)
+            Task {
+                await syncService.sync()
+            }
             dismiss()
         } label: {
             Label("Delete", systemImage: "trash")

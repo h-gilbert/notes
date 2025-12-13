@@ -10,6 +10,8 @@ struct NoteEditorView: View {
 
     @State private var dragOffset: CGFloat = 0
     @State private var syncService = SyncService.shared
+    @State private var cursorAnchorID = "cursorAnchor"
+    @State private var keyboardObserver = KeyboardObserver()
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isContentFocused: Bool
 
@@ -105,26 +107,53 @@ struct NoteEditorView: View {
     }
 
     private func noteContent(geometry: GeometryProxy) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                titleField
-                contentField
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    titleField
+                    contentField
 
-                // Tappable area to focus content field
-                Color.clear
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: max(0, geometry.size.height - topPadding - 250))
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        isContentFocused = true
-                    }
+                    // Invisible anchor for scrolling to cursor position
+                    Color.clear
+                        .frame(height: 1)
+                        .id(cursorAnchorID)
+
+                    // Tappable area to focus content field
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: max(0, geometry.size.height - topPadding - 250 - keyboardObserver.keyboardHeight))
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            isContentFocused = true
+                        }
+                }
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.top, Theme.Spacing.sm)
+                .padding(.bottom, keyboardObserver.keyboardHeight > 0 ? keyboardObserver.keyboardHeight - geometry.safeAreaInsets.bottom : 0)
             }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.top, Theme.Spacing.sm)
+            .scrollDismissesKeyboard(.interactively)
+            .frame(minHeight: geometry.size.height - topPadding - 100)
+            .simultaneousGesture(dismissDragGesture)
+            .onChange(of: keyboardObserver.keyboardHeight) { oldValue, newValue in
+                // When keyboard appears, scroll to show cursor
+                if newValue > oldValue && isContentFocused {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        withAnimation {
+                            proxy.scrollTo(cursorAnchorID, anchor: .bottom)
+                        }
+                    }
+                }
+            }
+            .onChange(of: note.content) { _, _ in
+                if isContentFocused && keyboardObserver.keyboardHeight > 0 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            proxy.scrollTo(cursorAnchorID, anchor: .bottom)
+                        }
+                    }
+                }
+            }
         }
-        .scrollDismissesKeyboard(.interactively)
-        .frame(minHeight: geometry.size.height - topPadding - 100)
-        .simultaneousGesture(dismissDragGesture)
     }
 
     private var dismissDragGesture: some Gesture {
@@ -217,7 +246,14 @@ struct NoteEditorView: View {
 
     private var deleteButton: some View {
         Button(role: .destructive) {
+            // Track deletion for sync before deleting
+            if let serverID = note.serverID {
+                syncService.markNoteAsDeleted(serverID: serverID)
+            }
             modelContext.delete(note)
+            Task {
+                await syncService.sync()
+            }
             dismiss()
         } label: {
             Label("Delete", systemImage: "trash")
