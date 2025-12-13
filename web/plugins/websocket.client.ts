@@ -1,36 +1,34 @@
 export default defineNuxtPlugin(() => {
   const authStore = useAuthStore()
-  const { connect, disconnect } = useWebSocket()
+  const { connect, disconnect, connectionStatus } = useWebSocket()
+
+  // Track the last token we connected with to avoid duplicate connections
+  let lastConnectedToken: string | null = null
 
   // Load stored auth on startup
   authStore.loadStoredAuth()
 
-  // Connect if already authenticated
-  if (authStore.isAuthenticated && authStore.token) {
-    connect(authStore.token)
-  }
-
-  // Watch for auth state changes
+  // Single watcher for both auth state and token changes
   watch(
-    () => authStore.isAuthenticated,
-    (isAuthenticated) => {
-      if (isAuthenticated && authStore.token) {
-        connect(authStore.token)
+    () => ({ isAuthenticated: authStore.isAuthenticated, token: authStore.token }),
+    ({ isAuthenticated, token }) => {
+      if (isAuthenticated && token) {
+        // Only connect if token changed or we're not already connected/connecting
+        if (token !== lastConnectedToken && connectionStatus.value === 'disconnected') {
+          lastConnectedToken = token
+          connect(token)
+        } else if (token !== lastConnectedToken && connectionStatus.value === 'connected') {
+          // Token changed while connected - reconnect with new token
+          lastConnectedToken = token
+          disconnect()
+          connect(token)
+        }
       } else {
+        // Not authenticated - disconnect
+        lastConnectedToken = null
         disconnect()
       }
-    }
-  )
-
-  // Watch for token changes (e.g., token refresh)
-  watch(
-    () => authStore.token,
-    (newToken, oldToken) => {
-      if (newToken && newToken !== oldToken) {
-        // Reconnect with new token
-        disconnect()
-        connect(newToken)
-      }
-    }
+    },
+    { immediate: true }
   )
 })
