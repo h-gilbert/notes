@@ -203,6 +203,33 @@ final class SyncService {
             existingNote = existingNotes.first { $0.id.uuidString == dto.id && $0.serverID == nil }
         }
 
+        // If still not found, check pending notes by content match
+        // This handles the case where server assigns a different ID than client's UUID
+        if existingNote == nil {
+            existingNote = pendingNotes.first { note in
+                note.serverID == nil &&
+                note.title == dto.title &&
+                note.content == dto.content
+            }
+            if existingNote != nil {
+                print("SyncService: Matched pending note by content - '\(dto.title)'")
+            }
+        }
+
+        // Also check recently created notes that might have been synced but with different ID
+        if existingNote == nil {
+            let recentThreshold = Date().addingTimeInterval(-30)
+            existingNote = existingNotes.first { note in
+                note.serverID == nil &&
+                (note.createdAt > recentThreshold || note.updatedAt > recentThreshold) &&
+                note.title == dto.title &&
+                note.content == dto.content
+            }
+            if existingNote != nil {
+                print("SyncService: Matched recent note by content - '\(dto.title)'")
+            }
+        }
+
         let note: Note
         if let existing = existingNote {
             // Check for conflicts (only if note was modified locally after server version)
@@ -211,10 +238,13 @@ final class SyncService {
                 // Local changes are newer, mark as conflict but still update serverID
                 existing.serverID = dto.id
                 existing.syncStatus = .conflict
+                print("SyncService: Conflict detected for '\(dto.title)', keeping local changes")
                 return
             }
             note = existing
         } else {
+            // This is genuinely a new note from the server (created on another device)
+            print("SyncService: Creating new note from server - '\(dto.title)'")
             note = Note()
             context.insert(note)
         }

@@ -415,10 +415,18 @@ final class WebSocketService {
         }
 
         do {
-            // Find existing note by serverID
+            // Find existing note by serverID or local UUID
             let descriptor = FetchDescriptor<Note>()
             let allNotes = try context.fetch(descriptor)
-            let existingNote = allNotes.first { $0.serverID == dto.id }
+
+            // Try to find existing note by serverID first
+            var existingNote = allNotes.first { $0.serverID == dto.id }
+
+            // If not found by serverID, check if this matches a pending note by local UUID
+            // (the server may use local UUID as the ID for newly created notes)
+            if existingNote == nil {
+                existingNote = allNotes.first { $0.id.uuidString == dto.id }
+            }
 
             let note: Note
             if let existing = existingNote {
@@ -429,6 +437,44 @@ final class WebSocketService {
                 }
                 note = existing
             } else {
+                // Before creating a new note, check if this is an echo of a local note creation
+                // This happens when we create a note locally, sync it, and then receive
+                // a WebSocket notification about the same note (but with a server-assigned ID)
+
+                // Check ALL notes without serverID (could be pending OR recently synced where
+                // the sync response hasn't been fully processed yet)
+                let notesWithoutServerID = allNotes.filter { $0.serverID == nil }
+
+                for localNote in notesWithoutServerID {
+                    if localNote.title == dto.title && localNote.content == dto.content {
+                        print("WebSocket: Found matching local note without serverID, updating serverID")
+                        localNote.serverID = dto.id
+                        localNote.syncStatus = .synced
+                        try context.save()
+                        return
+                    }
+                }
+
+                // Also check recently created/updated notes that might have a serverID set
+                // but with matching content - this catches race conditions where sync completed
+                // but used a different ID than what WebSocket is sending
+                let recentThreshold = Date().addingTimeInterval(-30) // Within last 30 seconds
+                let recentNotes = allNotes.filter { $0.createdAt > recentThreshold || $0.updatedAt > recentThreshold }
+
+                for recentNote in recentNotes {
+                    if recentNote.title == dto.title &&
+                       recentNote.content == dto.content &&
+                       recentNote.serverID != dto.id {
+                        print("WebSocket: Found recent note with matching content, updating serverID from '\(recentNote.serverID ?? "nil")' to '\(dto.id)'")
+                        recentNote.serverID = dto.id
+                        recentNote.syncStatus = .synced
+                        try context.save()
+                        return
+                    }
+                }
+
+                // This is a genuinely new note from another device
+                print("WebSocket: Creating new note from server - '\(dto.title)'")
                 note = Note()
                 context.insert(note)
             }
