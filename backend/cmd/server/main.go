@@ -79,6 +79,7 @@ func main() {
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/login", authHandler.Login)
 			auth.GET("/me", middleware.AuthMiddleware(authService), authHandler.Me)
+			auth.POST("/refresh", middleware.AuthMiddleware(authService), authHandler.Refresh)
 		}
 
 		// Notes routes (protected)

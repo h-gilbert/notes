@@ -61,6 +61,10 @@ class ApiClient {
     return this.request('GET', '/api/auth/me')
   }
 
+  async refreshToken(): Promise<AuthResponse> {
+    return this.request('POST', '/api/auth/refresh')
+  }
+
   // Notes
   async fetchNotes(since?: string): Promise<SyncResponse> {
     const query = since ? `?since=${encodeURIComponent(since)}` : ''

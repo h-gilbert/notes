@@ -84,3 +84,27 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		Username: user.Username,
 	})
 }
+
+func (h *AuthHandler) Refresh(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	user, err := h.authService.GetUserByID(c.Request.Context(), userID)
+	if err != nil {
+		response.NotFound(c, "user not found")
+		return
+	}
+
+	token, err := h.authService.RefreshToken(userID)
+	if err != nil {
+		response.InternalError(c, "failed to refresh token")
+		return
+	}
+
+	response.Success(c, models.AuthResponse{
+		Token: token,
+		User: models.UserDTO{
+			ID:       user.ID.String(),
+			Username: user.Username,
+		},
+	})
+}

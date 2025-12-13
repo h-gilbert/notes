@@ -123,6 +123,11 @@ func (s *AuthService) GetUserByID(ctx context.Context, id uuid.UUID) (*models.Us
 	return s.userRepo.GetByID(ctx, id)
 }
 
+// RefreshToken generates a new token for a user (used when current token is still valid)
+func (s *AuthService) RefreshToken(userID uuid.UUID) (string, error) {
+	return s.generateToken(userID)
+}
+
 func (s *AuthService) generateToken(userID uuid.UUID) (string, error) {
 	claims := jwt.MapClaims{
 		"sub": userID.String(),
