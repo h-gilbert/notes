@@ -1,0 +1,50 @@
+# Notes App service definitions to add to /opt/docker/webapps/docker-compose.yml
+#
+# These services should be added to the main webapps docker-compose.yml file on the server.
+# The notes-api connects to the shared PostgreSQL database.
+
+services:
+  # ===========================================
+  # NOTES APP
+  # ===========================================
+  notes-api:
+    image: ghcr.io/h-gilbert/notes-api:latest
+    container_name: notes-api
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/notes?sslmode=disable
+      JWT_SECRET: ${NOTES_JWT_SECRET}
+      JWT_EXPIRY_HOURS: "168"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - database-network
+      - proxy-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  notes-frontend:
+    image: ghcr.io/h-gilbert/notes-frontend:latest
+    container_name: notes-frontend
+    restart: unless-stopped
+    networks:
+      - proxy-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+# Note: These networks should already exist (created externally)
+networks:
+  database-network:
+    external: true
+  proxy-network:
+    external: true

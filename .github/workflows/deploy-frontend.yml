@@ -1,4 +1,4 @@
-name: Deploy Frontend
+name: Build and Deploy Frontend
 
 on:
   push:
@@ -8,46 +8,80 @@ on:
       - '.github/workflows/deploy-frontend.yml'
   workflow_dispatch:
 
+env:
+  REGISTRY: ghcr.io
+
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install dependencies
-        working-directory: web
-        run: npm ci
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./web
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/notes-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NUXT_PUBLIC_API_BASE=https://notes.hamishgilbert.com
 
-      - name: Build frontend
-        working-directory: web
-        env:
-          NUXT_PUBLIC_API_BASE: https://notes.hamishgilbert.com
-        run: npm run generate
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
 
       - name: Deploy to server
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT }}
-          source: "web/.output/public/*"
-          target: "/mnt/user/appdata/notes-app/frontend/"
-          strip_components: 3
-          rm: true
+          host: ${{ secrets.SERVER_TAILSCALE_IP }}
+          username: fred
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            echo "Deploying notes-frontend..."
 
-      - name: Restart nginx to pick up new files
-        run: |
-          echo "${{ secrets.SERVER_SSH_KEY }}" > /tmp/ssh_key
-          chmod 600 /tmp/ssh_key
-          ssh -o StrictHostKeyChecking=no -i /tmp/ssh_key -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} 'docker restart multi-site-nginx && sleep 2 && echo "Nginx restarted successfully"'
-          rm /tmp/ssh_key
+            # Pull latest image
+            docker pull ghcr.io/h-gilbert/notes-frontend:latest
+
+            # Restart container
+            cd /opt/docker/webapps
+            docker compose up -d --no-deps notes-frontend
+
+            # Verify health
+            echo "Checking health..."
+            for i in {1..10}; do
+              if docker exec notes-frontend wget --no-verbose --tries=1 --spider http://localhost:80 2>/dev/null; then
+                echo "Frontend is healthy!"
+                break
+              fi
+              echo "Waiting for frontend to start... ($i/10)"
+              sleep 2
+            done
+
+            # Show status
+            echo "Container status:"
+            docker ps --filter "name=notes-frontend" --format "table {{.Names}}\t{{.Status}}"
+
+            echo "Deployment complete!"
