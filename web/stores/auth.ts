@@ -36,7 +36,8 @@ export const useAuthStore = defineStore('auth', {
   }),
 
   getters: {
-    isAuthenticated: (state) => !!state.accessToken
+    isAuthenticated: (state) => !!state.accessToken,
+    token: (state) => state.accessToken
   },
 
   actions: {
