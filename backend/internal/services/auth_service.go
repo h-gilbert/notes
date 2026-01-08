@@ -19,6 +19,7 @@ var (
 	ErrInvalidToken       = errors.New("invalid token")
 	ErrTokenExpired       = errors.New("token expired")
 	ErrTokenRevoked       = errors.New("token revoked")
+	ErrPasswordMismatch   = errors.New("current password is incorrect")
 )
 
 // TokenType represents the type of JWT token
@@ -344,6 +345,35 @@ func (s *AuthService) LogoutAll(ctx context.Context, userID uuid.UUID, clientIP 
 	}
 
 	log.Printf("[SECURITY] All tokens revoked for user: %s from IP: %s", userID.String(), clientIP)
+	return nil
+}
+
+// ChangePassword changes a user's password after verifying the current password
+func (s *AuthService) ChangePassword(ctx context.Context, userID uuid.UUID, currentPassword, newPassword, clientIP string) error {
+	// Get user
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	// Verify current password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(currentPassword)); err != nil {
+		log.Printf("[SECURITY] Failed password change attempt - invalid current password for user: %s from IP: %s", user.Username, clientIP)
+		return ErrPasswordMismatch
+	}
+
+	// Hash new password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	// Update password
+	if err := s.userRepo.UpdatePassword(ctx, userID, string(hashedPassword)); err != nil {
+		return err
+	}
+
+	log.Printf("[SECURITY] Password changed successfully for user: %s from IP: %s", user.Username, clientIP)
 	return nil
 }
 

@@ -114,6 +114,7 @@ func main() {
 			auth.POST("/refresh", authHandler.Refresh) // Uses refresh token, not access token
 			auth.POST("/logout", authHandler.Logout)   // Revokes current tokens
 			auth.POST("/logout-all", middleware.AuthMiddleware(authService), authHandler.LogoutAll) // Requires auth, revokes all user tokens
+			auth.POST("/change-password", middleware.AuthMiddleware(authService), authHandler.ChangePassword) // Requires auth
 			auth.GET("/me", middleware.AuthMiddleware(authService), authHandler.Me)
 		}
 

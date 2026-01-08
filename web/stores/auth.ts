@@ -62,6 +62,15 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
+    async changePassword(currentPassword: string, newPassword: string) {
+      this.isLoading = true
+      try {
+        await api.changePassword({ current_password: currentPassword, new_password: newPassword })
+      } finally {
+        this.isLoading = false
+      }
+    },
+
     logout() {
       this.cancelScheduledRefresh()
       this.accessToken = null

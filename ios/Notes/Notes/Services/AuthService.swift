@@ -19,6 +19,11 @@ struct AuthResponse: Codable, Sendable {
     let user: UserDTO
 }
 
+struct ChangePasswordRequest: Codable, Sendable {
+    let current_password: String
+    let new_password: String
+}
+
 struct UserDTO: Codable, Sendable {
     let id: String
     let username: String
@@ -33,6 +38,7 @@ enum AuthError: Error, LocalizedError {
     case serverError(String)
     case invalidResponse
     case tokenExpired
+    case passwordMismatch
 
     var errorDescription: String? {
         switch self {
@@ -48,6 +54,8 @@ enum AuthError: Error, LocalizedError {
             return "Invalid response from server"
         case .tokenExpired:
             return "Session expired. Please log in again."
+        case .passwordMismatch:
+            return "Current password is incorrect"
         }
     }
 }
@@ -167,6 +175,75 @@ final class AuthService {
 
     func clearError() {
         errorMessage = nil
+    }
+
+    func changePassword(currentPassword: String, newPassword: String) async throws {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+
+        guard let token = KeychainHelper.getAccessToken() else {
+            throw AuthError.tokenExpired
+        }
+
+        let request = ChangePasswordRequest(current_password: currentPassword, new_password: newPassword)
+        try await performAuthenticatedRequest(
+            endpoint: "/api/auth/change-password",
+            method: "POST",
+            body: request,
+            token: token
+        )
+    }
+
+    private func performAuthenticatedRequest<B: Encodable>(
+        endpoint: String,
+        method: String,
+        body: B,
+        token: String
+    ) async throws {
+        guard let url = URL(string: baseURL + endpoint) else {
+            throw AuthError.invalidResponse
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(body)
+
+        do {
+            let (data, response) = try await session.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw AuthError.invalidResponse
+            }
+
+            switch httpResponse.statusCode {
+            case 200, 201, 204:
+                return // Success
+            case 401:
+                // Check if it's a password mismatch
+                if let errorData = try? JSONDecoder().decode([String: String].self, from: data),
+                   let message = errorData["message"],
+                   message.lowercased().contains("password") {
+                    throw AuthError.passwordMismatch
+                }
+                throw AuthError.invalidCredentials
+            default:
+                if let errorData = try? JSONDecoder().decode([String: String].self, from: data),
+                   let message = errorData["message"] {
+                    throw AuthError.serverError(message)
+                }
+                throw AuthError.serverError("Request failed with status \(httpResponse.statusCode)")
+            }
+        } catch let error as AuthError {
+            self.errorMessage = error.localizedDescription
+            throw error
+        } catch {
+            let authError = AuthError.networkError(error)
+            self.errorMessage = authError.localizedDescription
+            throw authError
+        }
     }
 
     // MARK: - Token Refresh

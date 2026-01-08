@@ -177,3 +177,26 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 
 	response.Success(c, gin.H{"message": "logged out from all devices successfully"})
 }
+
+// ChangePassword changes the current user's password
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	var req models.ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "invalid request: current_password and new_password are required (6-128 characters)")
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	clientIP := c.ClientIP()
+
+	if err := h.authService.ChangePassword(c.Request.Context(), userID, req.CurrentPassword, req.NewPassword, clientIP); err != nil {
+		if errors.Is(err, services.ErrPasswordMismatch) {
+			response.Unauthorized(c, "current password is incorrect")
+			return
+		}
+		response.InternalError(c, "failed to change password")
+		return
+	}
+
+	response.Success(c, gin.H{"message": "password changed successfully"})
+}

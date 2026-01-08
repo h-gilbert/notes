@@ -48,6 +48,11 @@ type LogoutRequest struct {
 	RefreshToken string `json:"refresh_token,omitempty"`
 }
 
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password" binding:"required,min=6,max=128"`
+	NewPassword     string `json:"new_password" binding:"required,min=6,max=128"`
+}
+
 type AuthResponse struct {
 	AccessToken  string  `json:"access_token"`
 	RefreshToken string  `json:"refresh_token"`

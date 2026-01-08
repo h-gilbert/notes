@@ -70,3 +70,8 @@ export interface AuthResponse {
   token_type: string
   user: User
 }
+
+export interface ChangePasswordRequest {
+  current_password: string
+  new_password: string
+}

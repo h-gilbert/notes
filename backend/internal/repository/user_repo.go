@@ -94,3 +94,15 @@ func (r *UserRepository) GetByUsername(ctx context.Context, username string) (*m
 
 	return user, nil
 }
+
+func (r *UserRepository) UpdatePassword(ctx context.Context, id uuid.UUID, passwordHash string) error {
+	query := `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`
+	result, err := r.pool.Exec(ctx, query, passwordHash, id)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}

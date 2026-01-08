@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var authService = AuthService.shared
     @State private var showingDeleteConfirmation = false
     @State private var showingLogoutConfirmation = false
+    @State private var showingChangePassword = false
 
     var body: some View {
         NavigationStack {
@@ -58,11 +59,20 @@ struct SettingsView: View {
                 }
             }
 
+            Button {
+                showingChangePassword = true
+            } label: {
+                Text("Change Password")
+            }
+
             Button(role: .destructive) {
                 showingLogoutConfirmation = true
             } label: {
                 Text("Sign Out")
             }
+        }
+        .sheet(isPresented: $showingChangePassword) {
+            ChangePasswordView()
         }
     }
 

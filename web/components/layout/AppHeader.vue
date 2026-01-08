@@ -18,6 +18,9 @@
         <NuxtLink to="/archive" class="nav-link" :class="{ active: route.path === '/archive' }">
           Archive
         </NuxtLink>
+        <NuxtLink to="/settings" class="nav-link" :class="{ active: route.path === '/settings' }">
+          Settings
+        </NuxtLink>
         <button @click="handleLogout" class="logout-btn">
           Logout
         </button>
