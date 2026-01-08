@@ -11,10 +11,6 @@ enum WebSocketEvent: Sendable {
     case error(String)
 }
 
-// MARK: - WebSocket Authentication Protocol
-
-private let wsAuthProtocol = "access_token"
-
 // MARK: - WebSocket Actor (Network Layer)
 
 actor WebSocketActor {
@@ -89,7 +85,7 @@ actor WebSocketActor {
         // Use Sec-WebSocket-Protocol header for authentication
         // Format: "access_token, <actual-token>"
         // This is more secure than query params as it's not logged in URLs
-        let protocols = "\(wsAuthProtocol), \(token)"
+        let protocols = "access_token, \(token)"
         request.setValue(protocols, forHTTPHeaderField: "Sec-WebSocket-Protocol")
 
         webSocketTask = session.webSocketTask(with: request)

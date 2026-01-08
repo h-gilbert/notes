@@ -180,7 +180,7 @@ struct HomeView: View {
             }
             .task {
                 // Configure sync service with model context and trigger initial sync
-                if let token = UserDefaults.standard.string(forKey: Constants.Storage.authTokenKey) {
+                if let token = KeychainHelper.getAccessToken() {
                     await syncService.configure(
                         modelContext: modelContext,
                         baseURL: Constants.API.baseURL,
