@@ -1,91 +1,87 @@
 <template>
-  <div>
-    <NuxtLayout name="default">
-      <div class="settings-container">
-        <h1 class="page-title">Settings</h1>
+  <div class="settings-container">
+    <h1 class="page-title">Settings</h1>
 
-        <section class="settings-section">
-          <h2 class="section-title">Account</h2>
-          <div class="card">
-            <div class="account-info">
-              <span class="label">Signed in as</span>
-              <span class="value">{{ authStore.user?.username }}</span>
-            </div>
-          </div>
-        </section>
-
-        <section class="settings-section">
-          <h2 class="section-title">Change Password</h2>
-          <div class="card">
-            <form @submit.prevent="handleChangePassword" class="form">
-              <div class="field">
-                <label for="currentPassword" class="label">Current Password</label>
-                <input
-                  id="currentPassword"
-                  v-model="currentPassword"
-                  type="password"
-                  class="input"
-                  placeholder="Enter current password"
-                  required
-                />
-              </div>
-
-              <div class="field">
-                <label for="newPassword" class="label">New Password</label>
-                <input
-                  id="newPassword"
-                  v-model="newPassword"
-                  type="password"
-                  class="input"
-                  placeholder="Enter new password"
-                  required
-                  minlength="6"
-                />
-                <span v-if="newPassword && newPassword.length < 6" class="field-error">
-                  Password must be at least 6 characters
-                </span>
-              </div>
-
-              <div class="field">
-                <label for="confirmPassword" class="label">Confirm New Password</label>
-                <input
-                  id="confirmPassword"
-                  v-model="confirmPassword"
-                  type="password"
-                  class="input"
-                  placeholder="Confirm new password"
-                  required
-                />
-                <span v-if="confirmPassword && newPassword !== confirmPassword" class="field-error">
-                  Passwords do not match
-                </span>
-              </div>
-
-              <p v-if="error" class="error">{{ error }}</p>
-              <p v-if="success" class="success">{{ success }}</p>
-
-              <button
-                type="submit"
-                class="btn btn-primary submit-btn"
-                :disabled="!isFormValid || isLoading"
-              >
-                {{ isLoading ? 'Changing password...' : 'Change Password' }}
-              </button>
-            </form>
-          </div>
-        </section>
-
-        <section class="settings-section">
-          <h2 class="section-title">About</h2>
-          <div class="card">
-            <div class="about-info">
-              <span class="label">Version</span>
-              <span class="value">1.0.0</span>
-            </div>
-          </div>
-        </section>
+    <section class="settings-section">
+      <h2 class="section-title">Account</h2>
+      <div class="card">
+        <div class="account-info">
+          <span class="label">Signed in as</span>
+          <span class="value">{{ authStore.user?.username }}</span>
+        </div>
       </div>
-    </NuxtLayout>
+    </section>
+
+    <section class="settings-section">
+      <h2 class="section-title">Change Password</h2>
+      <div class="card">
+        <form @submit.prevent="handleChangePassword" class="form">
+          <div class="field">
+            <label for="currentPassword" class="label">Current Password</label>
+            <input
+              id="currentPassword"
+              v-model="currentPassword"
+              type="password"
+              class="input"
+              placeholder="Enter current password"
+              required
+            />
+          </div>
+
+          <div class="field">
+            <label for="newPassword" class="label">New Password</label>
+            <input
+              id="newPassword"
+              v-model="newPassword"
+              type="password"
+              class="input"
+              placeholder="Enter new password"
+              required
+              minlength="6"
+            />
+            <span v-if="newPassword && newPassword.length < 6" class="field-error">
+              Password must be at least 6 characters
+            </span>
+          </div>
+
+          <div class="field">
+            <label for="confirmPassword" class="label">Confirm New Password</label>
+            <input
+              id="confirmPassword"
+              v-model="confirmPassword"
+              type="password"
+              class="input"
+              placeholder="Confirm new password"
+              required
+            />
+            <span v-if="confirmPassword && newPassword !== confirmPassword" class="field-error">
+              Passwords do not match
+            </span>
+          </div>
+
+          <p v-if="error" class="error">{{ error }}</p>
+          <p v-if="success" class="success">{{ success }}</p>
+
+          <button
+            type="submit"
+            class="btn btn-primary submit-btn"
+            :disabled="!isFormValid || isLoading"
+          >
+            {{ isLoading ? 'Changing password...' : 'Change Password' }}
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2 class="section-title">About</h2>
+      <div class="card">
+        <div class="about-info">
+          <span class="label">Version</span>
+          <span class="value">1.0.0</span>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 

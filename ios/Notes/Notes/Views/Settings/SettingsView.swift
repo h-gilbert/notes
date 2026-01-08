@@ -45,6 +45,9 @@ struct SettingsView: View {
             } message: {
                 Text("You will need to sign in again to sync your notes.")
             }
+            .sheet(isPresented: $showingChangePassword) {
+                ChangePasswordView()
+            }
         }
     }
 
@@ -70,9 +73,6 @@ struct SettingsView: View {
             } label: {
                 Text("Sign Out")
             }
-        }
-        .sheet(isPresented: $showingChangePassword) {
-            ChangePasswordView()
         }
     }
 
