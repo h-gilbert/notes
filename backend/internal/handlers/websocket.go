@@ -6,30 +6,39 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/hamishgilbert/notes-app/backend/internal/middleware"
 	"github.com/hamishgilbert/notes-app/backend/internal/services"
 	ws "github.com/hamishgilbert/notes-app/backend/internal/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		// In production, validate the origin properly
-		// For now, allow all origins for development
-		return true
-	},
-}
-
 type WebSocketHandler struct {
-	hub         *ws.Hub
-	authService *services.AuthService
+	hub            *ws.Hub
+	authService    *services.AuthService
+	upgrader       websocket.Upgrader
+	allowedOrigins []string
 }
 
-func NewWebSocketHandler(hub *ws.Hub, authService *services.AuthService) *WebSocketHandler {
-	return &WebSocketHandler{
-		hub:         hub,
-		authService: authService,
+func NewWebSocketHandler(hub *ws.Hub, authService *services.AuthService, allowedOrigins []string) *WebSocketHandler {
+	h := &WebSocketHandler{
+		hub:            hub,
+		authService:    authService,
+		allowedOrigins: allowedOrigins,
 	}
+
+	h.upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				// Allow requests without origin (non-browser clients)
+				return true
+			}
+			return middleware.IsOriginAllowed(origin, h.allowedOrigins)
+		},
+	}
+
+	return h
 }
 
 // HandleWebSocket upgrades HTTP connection to WebSocket
@@ -59,7 +68,7 @@ func (h *WebSocketHandler) HandleWebSocket(c *gin.Context) {
 	}
 
 	// Upgrade to WebSocket
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		// Upgrade already sends error response
 		return

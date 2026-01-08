@@ -57,13 +57,14 @@ func main() {
 	authHandler := handlers.NewAuthHandler(authService)
 	notesHandler := handlers.NewNotesHandler(noteRepo, syncService, wsHub)
 	syncHandler := handlers.NewSyncHandler(syncService, wsHub)
-	wsHandler := handlers.NewWebSocketHandler(wsHub, authService)
+	wsHandler := handlers.NewWebSocketHandler(wsHub, authService, cfg.AllowedOrigins)
 
 	// Setup router
 	router := gin.Default()
 
 	// Global middleware
-	router.Use(middleware.CORSMiddleware())
+	router.Use(middleware.SecurityHeaders())
+	router.Use(middleware.CORSMiddleware(cfg.AllowedOrigins))
 
 	// Health check
 	router.GET("/health", func(c *gin.Context) {

@@ -33,3 +33,13 @@ DerivedData/
 *.dSYM.zip
 *.dSYM
 Pods/
+build/
+*.xcworkspace/xcuserdata/
+
+# Build artifacts
+*.app
+*.framework
+
+# Misc files that shouldn't be tracked
+*.pdf
+commands.txt
