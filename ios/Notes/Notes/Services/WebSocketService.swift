@@ -11,6 +11,10 @@ enum WebSocketEvent: Sendable {
     case error(String)
 }
 
+// MARK: - WebSocket Authentication Protocol
+
+private let wsAuthProtocol = "access_token"
+
 // MARK: - WebSocket Actor (Network Layer)
 
 actor WebSocketActor {
@@ -28,7 +32,14 @@ actor WebSocketActor {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 30
         configuration.waitsForConnectivity = true
-        self.session = URLSession(configuration: configuration)
+
+        // Use certificate pinning delegate for secure WebSocket connections
+        // In debug mode, pinning is disabled to allow local development
+        self.session = URLSession(
+            configuration: configuration,
+            delegate: CertificatePinningDelegate.shared,
+            delegateQueue: nil
+        )
     }
 
     // MARK: - Event Stream
@@ -56,7 +67,7 @@ actor WebSocketActor {
         // Close existing connection if any
         disconnectInternal()
 
-        // Convert HTTP URL to WebSocket URL
+        // Convert HTTP URL to WebSocket URL (without token in URL for security)
         let wsURL = baseURL
             .replacingOccurrences(of: "http://", with: "ws://")
             .replacingOccurrences(of: "https://", with: "wss://")
@@ -66,7 +77,7 @@ actor WebSocketActor {
         }
 
         urlComponents.path = "/api/ws"
-        urlComponents.queryItems = [URLQueryItem(name: "token", value: token)]
+        // Note: Token is now passed via Sec-WebSocket-Protocol header, not query param
 
         guard let url = urlComponents.url else {
             throw WebSocketError.invalidURL
@@ -75,10 +86,18 @@ actor WebSocketActor {
         var request = URLRequest(url: url)
         request.timeoutInterval = 30
 
+        // Use Sec-WebSocket-Protocol header for authentication
+        // Format: "access_token, <actual-token>"
+        // This is more secure than query params as it's not logged in URLs
+        let protocols = "\(wsAuthProtocol), \(token)"
+        request.setValue(protocols, forHTTPHeaderField: "Sec-WebSocket-Protocol")
+
         webSocketTask = session.webSocketTask(with: request)
         webSocketTask?.resume()
 
-        print("🔌 WebSocket: Connecting to \(url)")
+        #if DEBUG
+        print("🔌 WebSocket: Connecting to \(url) with subprotocol auth")
+        #endif
 
         // Start receiving messages
         startReceiving()

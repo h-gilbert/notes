@@ -52,8 +52,12 @@ The notes-api container will automatically run migrations when it starts.
 Add the following to `/opt/docker/webapps/.env`:
 
 ```env
-# Notes App JWT Secret (generate with: openssl rand -base64 32)
+# Notes App Configuration
+# JWT Secret - REQUIRED (generate with: openssl rand -base64 32)
 NOTES_JWT_SECRET=your-very-secure-jwt-secret-here
+
+# Allowed Origins - REQUIRED (your frontend domain)
+NOTES_ALLOWED_ORIGINS=https://notes.yourdomain.com
 ```
 
 ### 3. Add Services to Docker Compose
@@ -70,15 +74,27 @@ Add the notes-app services to `/opt/docker/webapps/docker-compose.yml`:
     restart: unless-stopped
     environment:
       PORT: "8080"
+      ENVIRONMENT: "production"
+      # For internal Docker networks, SSL can be skipped since traffic stays within the network.
+      # For external/managed databases (AWS RDS, etc.), use sslmode=require and remove DATABASE_SSL_SKIP_VALIDATION.
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/notes?sslmode=disable
+      DATABASE_SSL_SKIP_VALIDATION: "true"  # Only safe for internal Docker networks
       JWT_SECRET: ${NOTES_JWT_SECRET}
-      JWT_EXPIRY_HOURS: "168"
+      ALLOWED_ORIGINS: ${NOTES_ALLOWED_ORIGINS}
+      JWT_EXPIRY_MINUTES: "60"
+      REFRESH_EXPIRY_HOURS: "168"
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - database-network
       - proxy-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
 
   notes-frontend:
     image: ghcr.io/h-gilbert/notes-frontend:latest
@@ -86,6 +102,12 @@ Add the notes-app services to `/opt/docker/webapps/docker-compose.yml`:
     restart: unless-stopped
     networks:
       - proxy-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 ```
 
 ### 4. Deploy Nginx Configuration

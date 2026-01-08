@@ -18,6 +18,7 @@ var (
 	ErrUserExists         = errors.New("username already exists")
 	ErrInvalidToken       = errors.New("invalid token")
 	ErrTokenExpired       = errors.New("token expired")
+	ErrTokenRevoked       = errors.New("token revoked")
 )
 
 // TokenType represents the type of JWT token
@@ -43,14 +44,16 @@ type Claims struct {
 
 type AuthService struct {
 	userRepo      *repository.UserRepository
+	blacklistRepo *repository.TokenBlacklistRepository
 	jwtSecret     []byte
 	accessExpiry  time.Duration
 	refreshExpiry time.Duration
 }
 
-func NewAuthService(userRepo *repository.UserRepository, jwtSecret string, accessExpiryMinutes int, refreshExpiryHours int) *AuthService {
+func NewAuthService(userRepo *repository.UserRepository, blacklistRepo *repository.TokenBlacklistRepository, jwtSecret string, accessExpiryMinutes int, refreshExpiryHours int) *AuthService {
 	return &AuthService{
 		userRepo:      userRepo,
+		blacklistRepo: blacklistRepo,
 		jwtSecret:     []byte(jwtSecret),
 		accessExpiry:  time.Duration(accessExpiryMinutes) * time.Minute,
 		refreshExpiry: time.Duration(refreshExpiryHours) * time.Hour,
@@ -129,6 +132,11 @@ func (s *AuthService) Login(ctx context.Context, username, password string, clie
 
 // ValidateToken validates an access token and returns the user ID
 func (s *AuthService) ValidateToken(tokenString string) (uuid.UUID, error) {
+	return s.ValidateTokenWithContext(context.Background(), tokenString)
+}
+
+// ValidateTokenWithContext validates an access token with context and returns the user ID
+func (s *AuthService) ValidateTokenWithContext(ctx context.Context, tokenString string) (uuid.UUID, error) {
 	claims, err := s.parseAndValidateToken(tokenString)
 	if err != nil {
 		return uuid.Nil, err
@@ -144,11 +152,21 @@ func (s *AuthService) ValidateToken(tokenString string) (uuid.UUID, error) {
 		return uuid.Nil, ErrInvalidToken
 	}
 
+	// Check if token is revoked
+	if err := s.checkTokenRevoked(ctx, claims, userID); err != nil {
+		return uuid.Nil, err
+	}
+
 	return userID, nil
 }
 
 // ValidateRefreshToken validates a refresh token and returns the user ID
 func (s *AuthService) ValidateRefreshToken(tokenString string) (uuid.UUID, error) {
+	return s.ValidateRefreshTokenWithContext(context.Background(), tokenString)
+}
+
+// ValidateRefreshTokenWithContext validates a refresh token with context and returns the user ID and token ID
+func (s *AuthService) ValidateRefreshTokenWithContext(ctx context.Context, tokenString string) (uuid.UUID, error) {
 	claims, err := s.parseAndValidateToken(tokenString)
 	if err != nil {
 		return uuid.Nil, err
@@ -164,7 +182,48 @@ func (s *AuthService) ValidateRefreshToken(tokenString string) (uuid.UUID, error
 		return uuid.Nil, ErrInvalidToken
 	}
 
+	// Check if token is revoked
+	if err := s.checkTokenRevoked(ctx, claims, userID); err != nil {
+		return uuid.Nil, err
+	}
+
 	return userID, nil
+}
+
+// checkTokenRevoked checks if a token has been revoked
+func (s *AuthService) checkTokenRevoked(ctx context.Context, claims *Claims, userID uuid.UUID) error {
+	if s.blacklistRepo == nil {
+		return nil // Blacklist not configured, skip check
+	}
+
+	// Check if specific token is revoked
+	if claims.ID != "" {
+		revoked, err := s.blacklistRepo.IsTokenRevoked(ctx, claims.ID)
+		if err != nil {
+			log.Printf("[ERROR] Failed to check token blacklist: %v", err)
+			// Fail open for now - in production you might want to fail closed
+			return nil
+		}
+		if revoked {
+			log.Printf("[SECURITY] Revoked token used for user: %s", userID.String())
+			return ErrTokenRevoked
+		}
+	}
+
+	// Check if all tokens before a certain time are revoked
+	revokeAllTime, err := s.blacklistRepo.GetUserRevokeAllTime(ctx, userID)
+	if err != nil {
+		log.Printf("[ERROR] Failed to check revoke-all time: %v", err)
+		return nil
+	}
+	if !revokeAllTime.IsZero() && claims.IssuedAt != nil {
+		if claims.IssuedAt.Time.Before(revokeAllTime) {
+			log.Printf("[SECURITY] Token issued before revoke-all time used for user: %s", userID.String())
+			return ErrTokenRevoked
+		}
+	}
+
+	return nil
 }
 
 func (s *AuthService) parseAndValidateToken(tokenString string) (*Claims, error) {
@@ -195,20 +254,105 @@ func (s *AuthService) GetUserByID(ctx context.Context, id uuid.UUID) (*models.Us
 }
 
 // RefreshTokenPair generates a new token pair using a valid refresh token
-func (s *AuthService) RefreshTokenPair(refreshToken string, clientIP string) (*TokenPair, error) {
-	userID, err := s.ValidateRefreshToken(refreshToken)
+// Implements token rotation: the old refresh token is revoked after issuing new tokens
+func (s *AuthService) RefreshTokenPair(ctx context.Context, refreshToken string, clientIP string) (*TokenPair, error) {
+	// Parse the refresh token to get claims (including token ID for revocation)
+	claims, err := s.parseAndValidateToken(refreshToken)
 	if err != nil {
 		log.Printf("[SECURITY] Failed token refresh attempt from IP: %s - %v", clientIP, err)
 		return nil, err
 	}
 
+	if claims.TokenType != RefreshToken {
+		return nil, ErrInvalidToken
+	}
+
+	userID, err := uuid.Parse(claims.Subject)
+	if err != nil {
+		return nil, ErrInvalidToken
+	}
+
+	// Check if token is revoked
+	if err := s.checkTokenRevoked(ctx, claims, userID); err != nil {
+		log.Printf("[SECURITY] Revoked refresh token used from IP: %s", clientIP)
+		return nil, err
+	}
+
+	// Generate new token pair
 	tokens, err := s.generateTokenPair(userID)
 	if err != nil {
 		return nil, err
 	}
 
+	// Token rotation: revoke the old refresh token
+	if s.blacklistRepo != nil && claims.ID != "" && claims.ExpiresAt != nil {
+		if err := s.blacklistRepo.RevokeToken(ctx, claims.ID, userID, claims.ExpiresAt.Time); err != nil {
+			log.Printf("[ERROR] Failed to revoke old refresh token: %v", err)
+			// Don't fail the refresh, just log the error
+		}
+	}
+
 	log.Printf("[SECURITY] Token refreshed for user: %s from IP: %s", userID.String(), clientIP)
 	return tokens, nil
+}
+
+// Logout revokes the given access and refresh tokens
+func (s *AuthService) Logout(ctx context.Context, accessToken, refreshToken string, clientIP string) error {
+	if s.blacklistRepo == nil {
+		return nil // Blacklist not configured
+	}
+
+	// Revoke access token
+	if accessToken != "" {
+		claims, err := s.parseAndValidateToken(accessToken)
+		if err == nil && claims.ID != "" {
+			userID, _ := uuid.Parse(claims.Subject)
+			if claims.ExpiresAt != nil {
+				if err := s.blacklistRepo.RevokeToken(ctx, claims.ID, userID, claims.ExpiresAt.Time); err != nil {
+					log.Printf("[ERROR] Failed to revoke access token: %v", err)
+				}
+			}
+		}
+	}
+
+	// Revoke refresh token
+	if refreshToken != "" {
+		claims, err := s.parseAndValidateToken(refreshToken)
+		if err == nil && claims.ID != "" {
+			userID, _ := uuid.Parse(claims.Subject)
+			if claims.ExpiresAt != nil {
+				if err := s.blacklistRepo.RevokeToken(ctx, claims.ID, userID, claims.ExpiresAt.Time); err != nil {
+					log.Printf("[ERROR] Failed to revoke refresh token: %v", err)
+				}
+			}
+			log.Printf("[SECURITY] User logged out: %s from IP: %s", userID.String(), clientIP)
+		}
+	}
+
+	return nil
+}
+
+// LogoutAll revokes all tokens for a user (logout everywhere)
+func (s *AuthService) LogoutAll(ctx context.Context, userID uuid.UUID, clientIP string) error {
+	if s.blacklistRepo == nil {
+		return nil // Blacklist not configured
+	}
+
+	if err := s.blacklistRepo.RevokeAllUserTokens(ctx, userID, time.Now()); err != nil {
+		log.Printf("[ERROR] Failed to revoke all tokens for user %s: %v", userID.String(), err)
+		return err
+	}
+
+	log.Printf("[SECURITY] All tokens revoked for user: %s from IP: %s", userID.String(), clientIP)
+	return nil
+}
+
+// CleanupExpiredTokens removes expired tokens from the blacklist
+func (s *AuthService) CleanupExpiredTokens(ctx context.Context) (int64, error) {
+	if s.blacklistRepo == nil {
+		return 0, nil
+	}
+	return s.blacklistRepo.CleanupExpired(ctx)
 }
 
 // GenerateAccessToken generates only an access token (for backward compatibility)

@@ -80,7 +80,14 @@ actor APIClient {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 30
         configuration.timeoutIntervalForResource = 60
-        self.session = URLSession(configuration: configuration)
+
+        // Use certificate pinning delegate for secure connections
+        // In debug mode, pinning is disabled to allow local development
+        self.session = URLSession(
+            configuration: configuration,
+            delegate: CertificatePinningDelegate.shared,
+            delegateQueue: nil
+        )
 
         self.decoder = JSONDecoder()
         self.encoder = JSONEncoder()

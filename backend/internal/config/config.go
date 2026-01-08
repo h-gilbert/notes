@@ -54,9 +54,22 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("ALLOWED_ORIGINS environment variable is required in production")
 	}
 
+	// Validate DATABASE_URL SSL in production
+	databaseURL := getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/notes?sslmode=disable")
+	skipDBSSLValidation := getEnv("DATABASE_SSL_SKIP_VALIDATION", "false") == "true"
+	if env == "production" && !skipDBSSLValidation {
+		if strings.Contains(databaseURL, "sslmode=disable") {
+			return nil, fmt.Errorf("DATABASE_URL must not use sslmode=disable in production; use sslmode=require or sslmode=verify-full. Set DATABASE_SSL_SKIP_VALIDATION=true only for internal Docker networks")
+		}
+		// Warn if no sslmode specified (defaults to prefer, which may fallback to unencrypted)
+		if !strings.Contains(databaseURL, "sslmode=") {
+			return nil, fmt.Errorf("DATABASE_URL must specify sslmode=require or sslmode=verify-full in production. Set DATABASE_SSL_SKIP_VALIDATION=true only for internal Docker networks")
+		}
+	}
+
 	return &Config{
 		Port:              getEnv("PORT", "8080"),
-		DatabaseURL:       getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/notes?sslmode=disable"),
+		DatabaseURL:       databaseURL,
 		JWTSecret:         jwtSecret,
 		JWTExpiry:         getEnvInt("JWT_EXPIRY_MINUTES", 60),    // 1 hour default
 		RefreshExpiry:     getEnvInt("REFRESH_EXPIRY_HOURS", 168), // 7 days default

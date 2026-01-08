@@ -51,15 +51,30 @@ func main() {
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(db.Pool)
 	noteRepo := repository.NewNoteRepository(db.Pool)
+	tokenBlacklistRepo := repository.NewTokenBlacklistRepository(db.Pool)
 
 	// Initialize services
-	authService := services.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiry, cfg.RefreshExpiry)
+	authService := services.NewAuthService(userRepo, tokenBlacklistRepo, cfg.JWTSecret, cfg.JWTExpiry, cfg.RefreshExpiry)
 	syncService := services.NewSyncService(noteRepo)
 
 	// Initialize WebSocket hub
 	wsHub := websocket.NewHub()
 	go wsHub.Run()
 	log.Println("WebSocket hub started")
+
+	// Start token blacklist cleanup goroutine (runs every hour)
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			count, err := authService.CleanupExpiredTokens(context.Background())
+			if err != nil {
+				log.Printf("[ERROR] Failed to cleanup expired tokens: %v", err)
+			} else if count > 0 {
+				log.Printf("[INFO] Cleaned up %d expired tokens from blacklist", count)
+			}
+		}
+	}()
 
 	// Initialize rate limiters
 	generalRateLimiter := middleware.NewRateLimiter(cfg.RateLimitRequests, time.Minute, cfg.RateLimitBurst)
@@ -97,6 +112,8 @@ func main() {
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/login", authHandler.Login)
 			auth.POST("/refresh", authHandler.Refresh) // Uses refresh token, not access token
+			auth.POST("/logout", authHandler.Logout)   // Revokes current tokens
+			auth.POST("/logout-all", middleware.AuthMiddleware(authService), authHandler.LogoutAll) // Requires auth, revokes all user tokens
 			auth.GET("/me", middleware.AuthMiddleware(authService), authHandler.Me)
 		}
 

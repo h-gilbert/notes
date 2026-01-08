@@ -114,9 +114,9 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	}
 
 	clientIP := c.ClientIP()
-	tokens, err := h.authService.RefreshTokenPair(req.RefreshToken, clientIP)
+	tokens, err := h.authService.RefreshTokenPair(c.Request.Context(), req.RefreshToken, clientIP)
 	if err != nil {
-		if errors.Is(err, services.ErrInvalidToken) || errors.Is(err, services.ErrTokenExpired) {
+		if errors.Is(err, services.ErrInvalidToken) || errors.Is(err, services.ErrTokenExpired) || errors.Is(err, services.ErrTokenRevoked) {
 			response.Unauthorized(c, "invalid or expired refresh token")
 			return
 		}
@@ -142,4 +142,38 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 			Username: user.Username,
 		},
 	})
+}
+
+// Logout revokes the current tokens
+func (h *AuthHandler) Logout(c *gin.Context) {
+	var req models.LogoutRequest
+	_ = c.ShouldBindJSON(&req) // Optional body
+
+	// Get access token from Authorization header
+	accessToken := ""
+	authHeader := c.GetHeader("Authorization")
+	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+		accessToken = authHeader[7:]
+	}
+
+	clientIP := c.ClientIP()
+	if err := h.authService.Logout(c.Request.Context(), accessToken, req.RefreshToken, clientIP); err != nil {
+		response.InternalError(c, "failed to logout")
+		return
+	}
+
+	response.Success(c, gin.H{"message": "logged out successfully"})
+}
+
+// LogoutAll revokes all tokens for the current user (logout everywhere)
+func (h *AuthHandler) LogoutAll(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	clientIP := c.ClientIP()
+
+	if err := h.authService.LogoutAll(c.Request.Context(), userID, clientIP); err != nil {
+		response.InternalError(c, "failed to logout from all devices")
+		return
+	}
+
+	response.Success(c, gin.H{"message": "logged out from all devices successfully"})
 }

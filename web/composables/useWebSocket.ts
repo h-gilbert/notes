@@ -37,6 +37,9 @@ let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
 let pingInterval: ReturnType<typeof setInterval> | null = null
 let reconnectDelay = INITIAL_RECONNECT_DELAY
 
+// WebSocket authentication protocol name (must match server)
+const WS_AUTH_PROTOCOL = 'access_token'
+
 export function useWebSocket() {
   const config = useRuntimeConfig()
 
@@ -47,12 +50,15 @@ export function useWebSocket() {
 
     connectionStatus.value = 'connecting'
 
-    // Convert HTTP URL to WebSocket URL
+    // Convert HTTP URL to WebSocket URL (without token in URL for security)
     const baseUrl = config.public.apiBase as string
-    const wsUrl = baseUrl.replace(/^http/, 'ws') + '/api/ws?token=' + encodeURIComponent(token)
+    const wsUrl = baseUrl.replace(/^http/, 'ws') + '/api/ws'
 
     try {
-      socket.value = new WebSocket(wsUrl)
+      // Use Sec-WebSocket-Protocol header for authentication
+      // Format: ["access_token", "<actual-token>"]
+      // This is more secure than query params as it's not logged in URLs
+      socket.value = new WebSocket(wsUrl, [WS_AUTH_PROTOCOL, token])
 
       socket.value.onopen = handleOpen
       socket.value.onmessage = handleMessage

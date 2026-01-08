@@ -13,9 +13,15 @@ services:
     restart: unless-stopped
     environment:
       PORT: "8080"
+      ENVIRONMENT: "production"
+      # For internal Docker networks, SSL can be skipped since traffic stays within the network.
+      # For external/managed databases (AWS RDS, etc.), use sslmode=require and remove DATABASE_SSL_SKIP_VALIDATION.
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/notes?sslmode=disable
+      DATABASE_SSL_SKIP_VALIDATION: "true"  # Only safe for internal Docker networks
       JWT_SECRET: ${NOTES_JWT_SECRET}
-      JWT_EXPIRY_HOURS: "168"
+      ALLOWED_ORIGINS: ${NOTES_ALLOWED_ORIGINS}
+      JWT_EXPIRY_MINUTES: "60"
+      REFRESH_EXPIRY_HOURS: "168"
     depends_on:
       postgres:
         condition: service_healthy

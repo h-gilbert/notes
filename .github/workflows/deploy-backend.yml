@@ -53,12 +53,72 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Setup Tailscale
         uses: tailscale/github-action@v2
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
+
+      - name: Run migrations
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_TAILSCALE_IP }}
+          username: fred
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            COMPOSE_DIR="/opt/docker/webapps"
+            MIGRATIONS_DIR="$COMPOSE_DIR/.migrations"
+            mkdir -p "$MIGRATIONS_DIR"
+
+            # === Migration 001: Security Hardening ===
+            if [ ! -f "$MIGRATIONS_DIR/001-security-hardening.done" ]; then
+              echo "Running migration 001: Security Hardening..."
+
+              # Backup current files
+              BACKUP_DIR="$COMPOSE_DIR/backups"
+              mkdir -p "$BACKUP_DIR"
+              TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+              cp "$COMPOSE_DIR/docker-compose.yml" "$BACKUP_DIR/docker-compose.yml.backup_$TIMESTAMP"
+              cp "$COMPOSE_DIR/.env" "$BACKUP_DIR/.env.backup_$TIMESTAMP"
+
+              # Add NOTES_ALLOWED_ORIGINS to .env if not present
+              if ! grep -q "^NOTES_ALLOWED_ORIGINS=" "$COMPOSE_DIR/.env"; then
+                echo "" >> "$COMPOSE_DIR/.env"
+                echo "# Notes App - Allowed Origins (added by migration 001)" >> "$COMPOSE_DIR/.env"
+                echo "NOTES_ALLOWED_ORIGINS=https://notes.hamishgilbert.com" >> "$COMPOSE_DIR/.env"
+                echo "  Added NOTES_ALLOWED_ORIGINS to .env"
+              fi
+
+              # Update docker-compose.yml - add new env vars to notes-api
+              COMPOSE_FILE="$COMPOSE_DIR/docker-compose.yml"
+              if ! grep -A 20 "notes-api:" "$COMPOSE_FILE" | grep -q "ENVIRONMENT:"; then
+                # Create temp file with updates
+                awk '
+                /^  notes-api:/ { in_notes_api = 1 }
+                /^  [a-z]/ && !/^  notes-api:/ { in_notes_api = 0 }
+                in_notes_api && /PORT:.*"8080"/ {
+                    print; print "      ENVIRONMENT: \"production\""; print "      DATABASE_SSL_SKIP_VALIDATION: \"true\""; next
+                }
+                in_notes_api && /JWT_EXPIRY_HOURS:/ {
+                    print "      JWT_EXPIRY_MINUTES: \"60\""; print "      REFRESH_EXPIRY_HOURS: \"168\""; next
+                }
+                in_notes_api && /JWT_SECRET:/ {
+                    print; print "      ALLOWED_ORIGINS: ${NOTES_ALLOWED_ORIGINS}"; next
+                }
+                { print }
+                ' "$COMPOSE_FILE" > "$COMPOSE_FILE.tmp" && mv "$COMPOSE_FILE.tmp" "$COMPOSE_FILE"
+                echo "  Updated docker-compose.yml"
+              fi
+
+              touch "$MIGRATIONS_DIR/001-security-hardening.done"
+              echo "Migration 001 complete!"
+            else
+              echo "Migration 001 already applied, skipping"
+            fi
 
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.3

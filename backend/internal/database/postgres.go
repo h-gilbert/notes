@@ -77,6 +77,17 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		)`,
 
 		`CREATE INDEX IF NOT EXISTS idx_checklist_items_note_id ON checklist_items(note_id)`,
+
+		// Token blacklist for revocation support
+		`CREATE TABLE IF NOT EXISTS token_blacklist (
+			token_id VARCHAR(36) PRIMARY KEY,
+			user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			revoked_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+			expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+		)`,
+
+		`CREATE INDEX IF NOT EXISTS idx_token_blacklist_user_id ON token_blacklist(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_token_blacklist_expires_at ON token_blacklist(expires_at)`,
 	}
 
 	for _, migration := range migrations {

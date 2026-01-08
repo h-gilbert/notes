@@ -56,4 +56,19 @@ enum Constants {
         static let initialReconnectDelay: TimeInterval = 1.0
         static let maxReconnectDelay: TimeInterval = 30.0
     }
+
+    enum Security {
+        // Certificate pinning is configured in CertificatePinning.swift
+        // Public key hashes can be set via Info.plist:
+        //   - PINNED_PUBLIC_KEY_HASHES: Array of base64 SHA256 hashes
+        //   - PINNED_DOMAINS: Array of domains to pin (empty = all HTTPS)
+        //
+        // To generate your server's public key hash:
+        // openssl s_client -connect your-domain.com:443 -servername your-domain.com 2>/dev/null | \
+        //   openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | \
+        //   openssl dgst -sha256 -binary | base64
+        //
+        // Certificate pinning is automatically disabled in DEBUG builds
+        // to allow local development with self-signed certificates.
+    }
 }

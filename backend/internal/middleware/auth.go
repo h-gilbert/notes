@@ -28,9 +28,13 @@ func AuthMiddleware(authService *services.AuthService) gin.HandlerFunc {
 		}
 
 		token := parts[1]
-		userID, err := authService.ValidateToken(token)
+		userID, err := authService.ValidateTokenWithContext(c.Request.Context(), token)
 		if err != nil {
-			response.Unauthorized(c, "invalid or expired token")
+			if err == services.ErrTokenRevoked {
+				response.Unauthorized(c, "token has been revoked")
+			} else {
+				response.Unauthorized(c, "invalid or expired token")
+			}
 			c.Abort()
 			return
 		}
