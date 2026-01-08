@@ -36,16 +36,47 @@ type SyncResponse struct {
 }
 
 type AuthRequest struct {
-	Username string `json:"username" binding:"required,min=3,max=50"`
-	Password string `json:"password" binding:"required,min=6"`
+	Username string `json:"username" binding:"required,min=3,max=50,alphanum"`
+	Password string `json:"password" binding:"required,min=12,max=128"`
+}
+
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
 }
 
 type AuthResponse struct {
-	Token string  `json:"token"`
-	User  UserDTO `json:"user"`
+	AccessToken  string  `json:"access_token"`
+	RefreshToken string  `json:"refresh_token"`
+	ExpiresIn    int     `json:"expires_in"` // seconds until access token expires
+	TokenType    string  `json:"token_type"` // always "Bearer"
+	User         UserDTO `json:"user"`
 }
 
 type UserDTO struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
 }
+
+// NoteType enum values
+const (
+	NoteTypeText      = "text"
+	NoteTypeChecklist = "checklist"
+)
+
+// ValidNoteTypes contains all valid note types
+var ValidNoteTypes = map[string]bool{
+	NoteTypeText:      true,
+	NoteTypeChecklist: true,
+}
+
+// IsValidNoteType checks if the note type is valid
+func IsValidNoteType(noteType string) bool {
+	return ValidNoteTypes[noteType]
+}
+
+// MaxFieldLengths defines maximum lengths for various fields
+const (
+	MaxTitleLength   = 500
+	MaxContentLength = 100000 // 100KB
+	MaxItemTextLength = 1000
+)

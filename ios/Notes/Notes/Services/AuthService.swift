@@ -7,8 +7,15 @@ struct AuthRequest: Codable, Sendable {
     let password: String
 }
 
+struct RefreshRequest: Codable, Sendable {
+    let refresh_token: String
+}
+
 struct AuthResponse: Codable, Sendable {
-    let token: String
+    let access_token: String
+    let refresh_token: String
+    let expires_in: Int
+    let token_type: String
     let user: UserDTO
 }
 
@@ -60,9 +67,10 @@ final class AuthService {
     private let baseURL: String
     private let session: URLSession
 
-    // Token refresh settings
-    private let tokenRefreshThreshold: TimeInterval = 24 * 60 * 60 // Refresh if expiring in 24 hours
+    // Token refresh settings - refresh 5 minutes before expiry
+    private let tokenRefreshBuffer: TimeInterval = 5 * 60
     private var refreshTimer: Timer?
+    private var tokenExpiresAt: Date?
 
     private init() {
         self.baseURL = Constants.API.baseURL
@@ -70,34 +78,38 @@ final class AuthService {
         config.timeoutIntervalForRequest = 30
         self.session = URLSession(configuration: config)
 
-        // Check for existing token on init
-        if let token = UserDefaults.standard.string(forKey: Constants.Storage.authTokenKey) {
-            // Check if token is expired or needs refresh
+        // Check for existing tokens in Keychain
+        if let accessToken = KeychainHelper.getAccessToken() {
             Task {
-                await initializeWithToken(token)
+                await initializeWithToken(accessToken)
             }
         }
     }
 
     private func initializeWithToken(_ token: String) async {
         if isTokenExpired(token) {
-            // Token is expired, user needs to log in again
-            print("AuthService: Token is expired, logging out")
-            logout()
+            // Access token expired, try to refresh using refresh token
+            #if DEBUG
+            print("AuthService: Access token expired, attempting refresh")
+            #endif
+            await refreshTokenIfNeeded()
             return
         }
 
         self.isAuthenticated = true
+        self.tokenExpiresAt = getTokenExpirationDate(token)
         await configureAPIClient(token: token)
 
-        // Check if token needs refresh
+        // Check if token needs refresh soon
         if shouldRefreshToken(token) {
+            #if DEBUG
             print("AuthService: Token expiring soon, refreshing...")
+            #endif
             await refreshTokenIfNeeded()
         }
 
-        // Start periodic token refresh check
-        startTokenRefreshTimer()
+        // Schedule token refresh
+        scheduleTokenRefresh()
     }
 
     // MARK: - Public Methods
@@ -135,8 +147,14 @@ final class AuthService {
     func logout() {
         refreshTimer?.invalidate()
         refreshTimer = nil
-        UserDefaults.standard.removeObject(forKey: Constants.Storage.authTokenKey)
+        tokenExpiresAt = nil
+
+        // Clear tokens from Keychain
+        KeychainHelper.clearTokens()
+
+        // Clear other stored data
         UserDefaults.standard.removeObject(forKey: Constants.Storage.lastSyncDateKey)
+
         isAuthenticated = false
         currentUser = nil
 
@@ -154,74 +172,104 @@ final class AuthService {
     // MARK: - Token Refresh
 
     func refreshTokenIfNeeded() async {
-        guard let token = UserDefaults.standard.string(forKey: Constants.Storage.authTokenKey) else {
-            return
-        }
-
-        // Don't refresh if token is already expired (user needs to login again)
-        if isTokenExpired(token) {
-            print("AuthService: Token expired, user needs to login again")
+        guard let refreshToken = KeychainHelper.getRefreshToken() else {
+            #if DEBUG
+            print("AuthService: No refresh token available")
+            #endif
             logout()
             return
         }
 
-        // Only refresh if token is expiring soon
-        guard shouldRefreshToken(token) else {
-            return
-        }
-
         do {
-            let response: AuthResponse = try await performAuthenticatedRequest(
+            let request = RefreshRequest(refresh_token: refreshToken)
+            let response: AuthResponse = try await performRequest(
                 endpoint: "/api/auth/refresh",
                 method: "POST",
-                token: token
+                body: request
             )
 
-            // Update stored token
-            UserDefaults.standard.set(response.token, forKey: Constants.Storage.authTokenKey)
+            // Store new tokens in Keychain
+            try KeychainHelper.saveTokens(
+                accessToken: response.access_token,
+                refreshToken: response.refresh_token
+            )
+
             currentUser = response.user
+            isAuthenticated = true
+            tokenExpiresAt = Date().addingTimeInterval(TimeInterval(response.expires_in))
 
             // Update API client with new token
-            await configureAPIClient(token: response.token)
+            await configureAPIClient(token: response.access_token)
 
             // Reconnect WebSocket with new token
             await WebSocketService.shared.disconnect()
-            await WebSocketService.shared.connect(token: response.token)
+            await WebSocketService.shared.connect(token: response.access_token)
 
+            // Schedule next refresh
+            scheduleTokenRefresh()
+
+            #if DEBUG
             print("AuthService: Token refreshed successfully")
+            #endif
         } catch {
+            #if DEBUG
             print("AuthService: Failed to refresh token: \(error)")
-            // If refresh fails due to 401, logout the user
-            if case AuthError.invalidCredentials = error {
-                logout()
-            }
+            #endif
+            // If refresh fails, logout the user
+            logout()
         }
     }
 
     // MARK: - Private Methods
 
     private func handleAuthSuccess(response: AuthResponse) async {
-        UserDefaults.standard.set(response.token, forKey: Constants.Storage.authTokenKey)
+        // Store tokens in Keychain
+        do {
+            try KeychainHelper.saveTokens(
+                accessToken: response.access_token,
+                refreshToken: response.refresh_token
+            )
+        } catch {
+            #if DEBUG
+            print("AuthService: Failed to save tokens to Keychain: \(error)")
+            #endif
+        }
+
         currentUser = response.user
         isAuthenticated = true
+        tokenExpiresAt = Date().addingTimeInterval(TimeInterval(response.expires_in))
 
-        await configureAPIClient(token: response.token)
+        await configureAPIClient(token: response.access_token)
 
         // Connect WebSocket for real-time updates
-        await WebSocketService.shared.connect(token: response.token)
+        await WebSocketService.shared.connect(token: response.access_token)
 
-        // Start periodic token refresh check
-        startTokenRefreshTimer()
+        // Schedule token refresh
+        scheduleTokenRefresh()
     }
 
     private func configureAPIClient(token: String) async {
         await APIClient.shared.configure(baseURL: baseURL, authToken: token)
     }
 
-    private func startTokenRefreshTimer() {
+    private func scheduleTokenRefresh() {
         refreshTimer?.invalidate()
-        // Check every hour if token needs refresh
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 60 * 60, repeats: true) { [weak self] _ in
+        refreshTimer = nil
+
+        guard let expiresAt = tokenExpiresAt else { return }
+
+        // Calculate when to refresh (5 minutes before expiry)
+        let refreshTime = expiresAt.timeIntervalSinceNow - tokenRefreshBuffer
+
+        guard refreshTime > 0 else {
+            // Token already needs refresh
+            Task {
+                await refreshTokenIfNeeded()
+            }
+            return
+        }
+
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: refreshTime, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 await self?.refreshTokenIfNeeded()
             }
@@ -242,7 +290,7 @@ final class AuthService {
             return true // Refresh if we can't parse
         }
         let timeUntilExpiry = expirationDate.timeIntervalSince(Date())
-        return timeUntilExpiry < tokenRefreshThreshold
+        return timeUntilExpiry < tokenRefreshBuffer
     }
 
     private func getTokenExpirationDate(_ token: String) -> Date? {
@@ -252,6 +300,9 @@ final class AuthService {
 
         // Decode the payload (second part)
         var payload = String(parts[1])
+        // Handle base64url encoding
+        payload = payload.replacingOccurrences(of: "-", with: "+")
+        payload = payload.replacingOccurrences(of: "_", with: "/")
         // Add padding if needed for base64 decoding
         let remainder = payload.count % 4
         if remainder > 0 {
@@ -265,43 +316,6 @@ final class AuthService {
         }
 
         return Date(timeIntervalSince1970: exp)
-    }
-
-    private func performAuthenticatedRequest<T: Decodable>(
-        endpoint: String,
-        method: String,
-        token: String
-    ) async throws -> T {
-        guard let url = URL(string: baseURL + endpoint) else {
-            throw AuthError.invalidResponse
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-
-        do {
-            let (data, response) = try await session.data(for: request)
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw AuthError.invalidResponse
-            }
-
-            switch httpResponse.statusCode {
-            case 200, 201:
-                let decoded = try JSONDecoder().decode(T.self, from: data)
-                return decoded
-            case 401:
-                throw AuthError.invalidCredentials
-            default:
-                throw AuthError.serverError("Request failed with status \(httpResponse.statusCode)")
-            }
-        } catch let error as AuthError {
-            throw error
-        } catch {
-            throw AuthError.networkError(error)
-        }
     }
 
     private func performRequest<T: Decodable, B: Encodable>(

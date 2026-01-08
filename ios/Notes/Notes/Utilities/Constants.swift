@@ -2,22 +2,38 @@ import Foundation
 
 enum Constants {
     enum API {
-        // Production URL (endpoints already include /api)
-        static let baseURL = "https://notes.hamishgilbert.com"
-        // Development URLs:
-        // - Simulator: http://localhost:8088
-        // - Physical device on local network: http://192.168.1.75:8088
+        // Base URL is determined by build configuration
+        // In production builds, this should be set via build settings or Info.plist
+        static var baseURL: String {
+            #if DEBUG
+            // Development: Use localhost for simulator, local IP for device
+            #if targetEnvironment(simulator)
+            return "http://localhost:8088"
+            #else
+            // For physical device testing, update this to your local network IP
+            return "http://localhost:8088"
+            #endif
+            #else
+            // Production: Use environment variable or default
+            if let urlString = Bundle.main.object(forInfoDictionaryKey: "API_BASE_URL") as? String,
+               !urlString.isEmpty {
+                return urlString
+            }
+            // Fallback - should be configured in build settings
+            return "https://your-api-domain.com"
+            #endif
+        }
         static let version = "v1"
     }
 
     enum App {
-        static let bundleIdentifier = "com.hamish.Notes"
+        static let bundleIdentifier = Bundle.main.bundleIdentifier ?? "com.notes.app"
         static let appName = "Notes"
     }
 
     enum Storage {
+        // Note: Auth tokens are now stored in Keychain via KeychainHelper
         static let lastSyncDateKey = "lastSyncDate"
-        static let authTokenKey = "authToken"
         static let deletedNoteIDsKey = "deletedNoteIDs"
     }
 

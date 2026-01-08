@@ -59,7 +59,14 @@ export interface AuthRequest {
   password: string
 }
 
+export interface RefreshRequest {
+  refresh_token: string
+}
+
 export interface AuthResponse {
-  token: string
+  access_token: string
+  refresh_token: string
+  expires_in: number
+  token_type: string
   user: User
 }

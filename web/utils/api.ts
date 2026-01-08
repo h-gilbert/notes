@@ -1,4 +1,4 @@
-import type { AuthRequest, AuthResponse, NoteDTO, SyncRequest, SyncResponse, User } from '~/types'
+import type { AuthRequest, AuthResponse, NoteDTO, RefreshRequest, SyncRequest, SyncResponse, User } from '~/types'
 
 class ApiClient {
   private baseUrl: string = ''
@@ -61,8 +61,8 @@ class ApiClient {
     return this.request('GET', '/api/auth/me')
   }
 
-  async refreshToken(): Promise<AuthResponse> {
-    return this.request('POST', '/api/auth/refresh')
+  async refreshToken(refreshToken: string): Promise<AuthResponse> {
+    return this.request('POST', '/api/auth/refresh', { refresh_token: refreshToken } as RefreshRequest)
   }
 
   // Notes

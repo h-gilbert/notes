@@ -79,6 +79,12 @@ func (h *NotesHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Validate input
+	if err := validateNoteDTO(&dto); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
 	// Generate new ID if not provided
 	if dto.ID == "" {
 		dto.ID = uuid.New().String()
@@ -146,6 +152,12 @@ func (h *NotesHandler) Update(c *gin.Context) {
 	var dto models.NoteDTO
 	if err := c.ShouldBindJSON(&dto); err != nil {
 		response.BadRequest(c, "invalid request body")
+		return
+	}
+
+	// Validate input
+	if err := validateNoteDTO(&dto); err != nil {
+		response.BadRequest(c, err.Error())
 		return
 	}
 
@@ -242,4 +254,31 @@ func (h *NotesHandler) broadcastNoteDelete(userID uuid.UUID, noteID string) {
 	}
 
 	h.wsHub.BroadcastToUser(userID, data, "")
+}
+
+// validateNoteDTO validates the note DTO fields for security
+func validateNoteDTO(dto *models.NoteDTO) error {
+	// Validate note type
+	if dto.NoteType != "" && !models.IsValidNoteType(dto.NoteType) {
+		return errors.New("invalid note type: must be 'text' or 'checklist'")
+	}
+
+	// Validate title length
+	if len(dto.Title) > models.MaxTitleLength {
+		return errors.New("title exceeds maximum length of 500 characters")
+	}
+
+	// Validate content length
+	if len(dto.Content) > models.MaxContentLength {
+		return errors.New("content exceeds maximum length of 100000 characters")
+	}
+
+	// Validate checklist items
+	for _, item := range dto.ChecklistItems {
+		if len(item.Text) > models.MaxItemTextLength {
+			return errors.New("checklist item text exceeds maximum length of 1000 characters")
+		}
+	}
+
+	return nil
 }

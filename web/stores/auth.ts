@@ -4,24 +4,39 @@ import { api } from '~/utils/api'
 
 interface AuthState {
   user: User | null
-  token: string | null
+  accessToken: string | null
+  refreshToken: string | null
+  expiresAt: number | null // timestamp when access token expires
   isLoading: boolean
-  refreshTimer: ReturnType<typeof setInterval> | null
+  refreshTimer: ReturnType<typeof setTimeout> | null
 }
 
-// Token refresh threshold: refresh if expiring in less than 24 hours
-const TOKEN_REFRESH_THRESHOLD = 24 * 60 * 60 * 1000 // 24 hours in ms
+// Refresh token 5 minutes before expiry
+const TOKEN_REFRESH_BUFFER = 5 * 60 * 1000 // 5 minutes in ms
+
+// Cookie options for security
+const getCookieOptions = () => {
+  const isProduction = process.env.NODE_ENV === 'production'
+  return {
+    maxAge: 60 * 60 * 24 * 7, // 7 days
+    secure: isProduction, // Only send over HTTPS in production
+    sameSite: 'strict' as const, // Prevent CSRF
+    path: '/'
+  }
+}
 
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
     user: null,
-    token: null,
+    accessToken: null,
+    refreshToken: null,
+    expiresAt: null,
     isLoading: false,
     refreshTimer: null
   }),
 
   getters: {
-    isAuthenticated: (state) => !!state.token
+    isAuthenticated: (state) => !!state.accessToken
   },
 
   actions: {
@@ -29,8 +44,8 @@ export const useAuthStore = defineStore('auth', {
       this.isLoading = true
       try {
         const response = await api.login({ username, password })
-        this.setAuthData(response.token, response.user)
-        this.startTokenRefreshTimer()
+        this.setAuthData(response.access_token, response.refresh_token, response.expires_in, response.user)
+        this.scheduleTokenRefresh()
       } finally {
         this.isLoading = false
       }
@@ -40,22 +55,27 @@ export const useAuthStore = defineStore('auth', {
       this.isLoading = true
       try {
         const response = await api.register({ username, password })
-        this.setAuthData(response.token, response.user)
-        this.startTokenRefreshTimer()
+        this.setAuthData(response.access_token, response.refresh_token, response.expires_in, response.user)
+        this.scheduleTokenRefresh()
       } finally {
         this.isLoading = false
       }
     },
 
     logout() {
-      this.stopTokenRefreshTimer()
-      this.token = null
+      this.cancelScheduledRefresh()
+      this.accessToken = null
+      this.refreshToken = null
+      this.expiresAt = null
       this.user = null
 
-      // Clear cookies
-      const tokenCookie = useCookie('auth_token')
-      const userCookie = useCookie('auth_user')
-      tokenCookie.value = null
+      // Clear cookies with same options
+      const cookieOptions = getCookieOptions()
+      const accessTokenCookie = useCookie('auth_access_token', cookieOptions)
+      const refreshTokenCookie = useCookie('auth_refresh_token', cookieOptions)
+      const userCookie = useCookie('auth_user', cookieOptions)
+      accessTokenCookie.value = null
+      refreshTokenCookie.value = null
       userCookie.value = null
 
       api.setToken(null)
@@ -63,91 +83,104 @@ export const useAuthStore = defineStore('auth', {
 
     // Called during app init to hydrate state from cookies
     loadStoredAuth() {
-      const tokenCookie = useCookie<string | null>('auth_token')
-      const userCookie = useCookie<string | null>('auth_user')
+      const cookieOptions = getCookieOptions()
+      const accessTokenCookie = useCookie<string | null>('auth_access_token', cookieOptions)
+      const refreshTokenCookie = useCookie<string | null>('auth_refresh_token', cookieOptions)
+      const userCookie = useCookie<string | null>('auth_user', cookieOptions)
 
-      if (tokenCookie.value) {
-        // Check if token is expired
-        if (this.isTokenExpired(tokenCookie.value)) {
-          console.log('Token expired, logging out')
-          this.logout()
-          return
-        }
-
-        this.token = tokenCookie.value
-        api.setToken(tokenCookie.value)
+      // If we have a refresh token, we can try to restore the session
+      if (refreshTokenCookie.value) {
+        this.refreshToken = refreshTokenCookie.value
 
         if (userCookie.value) {
           try {
             this.user = JSON.parse(userCookie.value)
           } catch {
-            // Invalid user data, clear it
             userCookie.value = null
           }
         }
 
-        // Check if token needs refresh
-        if (this.shouldRefreshToken(tokenCookie.value)) {
-          console.log('Token expiring soon, refreshing...')
-          this.refreshToken()
+        // Check if access token is still valid
+        if (accessTokenCookie.value && !this.isTokenExpired(accessTokenCookie.value)) {
+          this.accessToken = accessTokenCookie.value
+          this.expiresAt = this.getTokenExpirationTimestamp(accessTokenCookie.value)
+          api.setToken(accessTokenCookie.value)
+          this.scheduleTokenRefresh()
+        } else {
+          // Access token expired or missing, try to refresh
+          this.doRefreshToken()
         }
-
-        // Start periodic refresh timer
-        this.startTokenRefreshTimer()
       }
     },
 
-    async refreshToken() {
-      if (!this.token) return
+    async doRefreshToken() {
+      if (!this.refreshToken) {
+        this.logout()
+        return
+      }
 
       try {
-        const response = await api.refreshToken()
-        this.setAuthData(response.token, response.user)
-        console.log('Token refreshed successfully')
+        const response = await api.refreshToken(this.refreshToken)
+        this.setAuthData(response.access_token, response.refresh_token, response.expires_in, response.user)
+        this.scheduleTokenRefresh()
       } catch (error) {
         console.error('Failed to refresh token:', error)
-        // If refresh fails, log out the user
         this.logout()
       }
     },
 
-    setAuthData(token: string, user: User) {
-      this.token = token
+    setAuthData(accessToken: string, refreshToken: string, expiresIn: number, user: User) {
+      this.accessToken = accessToken
+      this.refreshToken = refreshToken
+      this.expiresAt = Date.now() + (expiresIn * 1000)
       this.user = user
 
-      // Persist to cookies (SSR-safe)
-      const tokenCookie = useCookie('auth_token', { maxAge: 60 * 60 * 24 * 7 })
-      const userCookie = useCookie('auth_user', { maxAge: 60 * 60 * 24 * 7 })
-      tokenCookie.value = token
+      // Persist to cookies with security options
+      const cookieOptions = getCookieOptions()
+      const accessTokenCookie = useCookie('auth_access_token', cookieOptions)
+      const refreshTokenCookie = useCookie('auth_refresh_token', cookieOptions)
+      const userCookie = useCookie('auth_user', cookieOptions)
+
+      accessTokenCookie.value = accessToken
+      refreshTokenCookie.value = refreshToken
       userCookie.value = JSON.stringify(user)
 
-      api.setToken(token)
+      api.setToken(accessToken)
     },
 
-    startTokenRefreshTimer() {
-      this.stopTokenRefreshTimer()
-      // Check every hour if token needs refresh
-      this.refreshTimer = setInterval(() => {
-        if (this.token && this.shouldRefreshToken(this.token)) {
-          this.refreshToken()
-        }
-      }, 60 * 60 * 1000) // 1 hour
+    scheduleTokenRefresh() {
+      this.cancelScheduledRefresh()
+
+      if (!this.expiresAt) return
+
+      // Calculate when to refresh (5 minutes before expiry)
+      const refreshTime = this.expiresAt - Date.now() - TOKEN_REFRESH_BUFFER
+
+      if (refreshTime <= 0) {
+        // Token already expired or about to expire, refresh now
+        this.doRefreshToken()
+        return
+      }
+
+      // Schedule refresh
+      this.refreshTimer = setTimeout(() => {
+        this.doRefreshToken()
+      }, refreshTime)
     },
 
-    stopTokenRefreshTimer() {
+    cancelScheduledRefresh() {
       if (this.refreshTimer) {
-        clearInterval(this.refreshTimer)
+        clearTimeout(this.refreshTimer)
         this.refreshTimer = null
       }
     },
 
-    // Parse JWT and get expiration date
-    getTokenExpirationDate(token: string): Date | null {
+    // Parse JWT and get expiration timestamp
+    getTokenExpirationTimestamp(token: string): number | null {
       try {
         const parts = token.split('.')
         if (parts.length !== 3) return null
 
-        // Decode base64url payload
         let payload = parts[1]
         payload = payload.replace(/-/g, '+').replace(/_/g, '/')
         const padding = payload.length % 4
@@ -158,23 +191,16 @@ export const useAuthStore = defineStore('auth', {
         const decoded = JSON.parse(atob(payload))
         if (!decoded.exp) return null
 
-        return new Date(decoded.exp * 1000)
+        return decoded.exp * 1000
       } catch {
         return null
       }
     },
 
     isTokenExpired(token: string): boolean {
-      const expDate = this.getTokenExpirationDate(token)
-      if (!expDate) return true
-      return expDate < new Date()
-    },
-
-    shouldRefreshToken(token: string): boolean {
-      const expDate = this.getTokenExpirationDate(token)
-      if (!expDate) return true
-      const timeUntilExpiry = expDate.getTime() - Date.now()
-      return timeUntilExpiry < TOKEN_REFRESH_THRESHOLD
+      const expTimestamp = this.getTokenExpirationTimestamp(token)
+      if (!expTimestamp) return true
+      return expTimestamp < Date.now()
     }
   }
 })

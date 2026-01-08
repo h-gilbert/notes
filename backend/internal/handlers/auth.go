@@ -21,13 +21,18 @@ func NewAuthHandler(authService *services.AuthService) *AuthHandler {
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req models.AuthRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "invalid request body")
+		response.BadRequest(c, "invalid request: username must be 3-50 alphanumeric characters, password must be 12-128 characters")
 		return
 	}
 
-	user, token, err := h.authService.Register(c.Request.Context(), req.Username, req.Password)
+	clientIP := c.ClientIP()
+	user, tokens, err := h.authService.Register(c.Request.Context(), req.Username, req.Password, clientIP)
 	if err != nil {
 		if errors.Is(err, services.ErrUserExists) {
+			// Record failed attempt for rate limiting
+			if al, exists := c.Get("authRateLimiter"); exists {
+				al.(*middleware.AuthRateLimiter).RecordFailedAttempt(clientIP)
+			}
 			response.Conflict(c, "username already exists")
 			return
 		}
@@ -36,7 +41,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	response.Created(c, models.AuthResponse{
-		Token: token,
+		AccessToken:  tokens.AccessToken,
+		RefreshToken: tokens.RefreshToken,
+		ExpiresIn:    tokens.ExpiresIn,
+		TokenType:    "Bearer",
 		User: models.UserDTO{
 			ID:       user.ID.String(),
 			Username: user.Username,
@@ -51,9 +59,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	user, token, err := h.authService.Login(c.Request.Context(), req.Username, req.Password)
+	clientIP := c.ClientIP()
+	user, tokens, err := h.authService.Login(c.Request.Context(), req.Username, req.Password, clientIP)
 	if err != nil {
 		if errors.Is(err, services.ErrInvalidCredentials) {
+			// Record failed attempt for rate limiting
+			if al, exists := c.Get("authRateLimiter"); exists {
+				al.(*middleware.AuthRateLimiter).RecordFailedAttempt(clientIP)
+			}
 			response.Unauthorized(c, "invalid username or password")
 			return
 		}
@@ -61,8 +74,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// Reset failed attempts on successful login
+	if al, exists := c.Get("authRateLimiter"); exists {
+		al.(*middleware.AuthRateLimiter).ResetFailedAttempts(clientIP)
+	}
+
 	response.Success(c, models.AuthResponse{
-		Token: token,
+		AccessToken:  tokens.AccessToken,
+		RefreshToken: tokens.RefreshToken,
+		ExpiresIn:    tokens.ExpiresIn,
+		TokenType:    "Bearer",
 		User: models.UserDTO{
 			ID:       user.ID.String(),
 			Username: user.Username,
@@ -86,22 +107,36 @@ func (h *AuthHandler) Me(c *gin.Context) {
 }
 
 func (h *AuthHandler) Refresh(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-
-	user, err := h.authService.GetUserByID(c.Request.Context(), userID)
-	if err != nil {
-		response.NotFound(c, "user not found")
+	var req models.RefreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "refresh_token is required")
 		return
 	}
 
-	token, err := h.authService.RefreshToken(userID)
+	clientIP := c.ClientIP()
+	tokens, err := h.authService.RefreshTokenPair(req.RefreshToken, clientIP)
 	if err != nil {
+		if errors.Is(err, services.ErrInvalidToken) || errors.Is(err, services.ErrTokenExpired) {
+			response.Unauthorized(c, "invalid or expired refresh token")
+			return
+		}
 		response.InternalError(c, "failed to refresh token")
 		return
 	}
 
+	// Get user info for the response
+	userID, _ := h.authService.ValidateToken(tokens.AccessToken)
+	user, err := h.authService.GetUserByID(c.Request.Context(), userID)
+	if err != nil {
+		response.InternalError(c, "failed to get user info")
+		return
+	}
+
 	response.Success(c, models.AuthResponse{
-		Token: token,
+		AccessToken:  tokens.AccessToken,
+		RefreshToken: tokens.RefreshToken,
+		ExpiresIn:    tokens.ExpiresIn,
+		TokenType:    "Bearer",
 		User: models.UserDTO{
 			ID:       user.ID.String(),
 			Username: user.Username,

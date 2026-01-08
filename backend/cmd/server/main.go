@@ -25,7 +25,15 @@ func main() {
 	_ = godotenv.Load()
 
 	// Load configuration
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
+
+	// Set Gin mode based on environment
+	if cfg.IsProduction() {
+		gin.SetMode(gin.ReleaseMode)
+	}
 
 	// Connect to database
 	db, err := database.New(cfg.DatabaseURL)
@@ -45,13 +53,17 @@ func main() {
 	noteRepo := repository.NewNoteRepository(db.Pool)
 
 	// Initialize services
-	authService := services.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiry)
+	authService := services.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpiry, cfg.RefreshExpiry)
 	syncService := services.NewSyncService(noteRepo)
 
 	// Initialize WebSocket hub
 	wsHub := websocket.NewHub()
 	go wsHub.Run()
 	log.Println("WebSocket hub started")
+
+	// Initialize rate limiters
+	generalRateLimiter := middleware.NewRateLimiter(cfg.RateLimitRequests, time.Minute, cfg.RateLimitBurst)
+	authRateLimiter := middleware.NewAuthRateLimiter()
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService)
@@ -62,25 +74,30 @@ func main() {
 	// Setup router
 	router := gin.Default()
 
+	// Set max request body size
+	router.MaxMultipartMemory = int64(cfg.MaxRequestBodyMB) << 20
+
 	// Global middleware
 	router.Use(middleware.SecurityHeaders())
 	router.Use(middleware.CORSMiddleware(cfg.AllowedOrigins))
+	router.Use(middleware.RateLimitMiddleware(generalRateLimiter))
 
-	// Health check
+	// Health check (no rate limit)
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "version": "1.0.1"})
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "version": "1.0.2"})
 	})
 
 	// API routes
 	api := router.Group("/api")
 	{
-		// Auth routes (public)
+		// Auth routes with stricter rate limiting
 		auth := api.Group("/auth")
+		auth.Use(middleware.AuthRateLimitMiddleware(authRateLimiter))
 		{
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/login", authHandler.Login)
+			auth.POST("/refresh", authHandler.Refresh) // Uses refresh token, not access token
 			auth.GET("/me", middleware.AuthMiddleware(authService), authHandler.Me)
-			auth.POST("/refresh", middleware.AuthMiddleware(authService), authHandler.Refresh)
 		}
 
 		// Notes routes (protected)

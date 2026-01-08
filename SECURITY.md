@@ -13,103 +13,63 @@ If you discover a security vulnerability in this project, please report it respo
 
 This document summarizes the security posture of the Notes App and provides recommendations for production deployment.
 
-### Fixed Issues
+### Implemented Security Features
 
-The following security issues have been addressed:
+The following security measures have been implemented:
 
-| Issue | Severity | Status |
-|-------|----------|--------|
-| CORS wildcard origin (`*`) | Critical | Fixed |
-| WebSocket CheckOrigin bypass | Critical | Fixed |
-| Missing security headers | Medium | Fixed |
-| Production secrets in repo | High | Fixed |
+| Feature | Status | Details |
+|---------|--------|---------|
+| CORS Origin Validation | ✅ Implemented | Origins validated against `ALLOWED_ORIGINS` env var |
+| WebSocket Origin Check | ✅ Implemented | Origin validated before WebSocket upgrade |
+| Security Headers | ✅ Implemented | X-Frame-Options, X-Content-Type-Options, etc. |
+| Rate Limiting | ✅ Implemented | General API + stricter auth endpoint limits |
+| JWT Access/Refresh Tokens | ✅ Implemented | 1-hour access tokens, 7-day refresh tokens |
+| Password Requirements | ✅ Implemented | Minimum 12 characters, alphanumeric usernames |
+| Input Validation | ✅ Implemented | Max lengths, note type enum validation |
+| Request Size Limits | ✅ Implemented | Configurable via `MAX_REQUEST_BODY_MB` |
+| Security Logging | ✅ Implemented | Auth events logged with IP addresses |
+| iOS Keychain Storage | ✅ Implemented | Tokens stored securely in iOS Keychain |
+| Debug Logging Guards | ✅ Implemented | `#if DEBUG` guards and debug logging utilities |
+| Production Secret Validation | ✅ Implemented | Server fails to start without required secrets |
+| Frontend Cookie Security | ✅ Implemented | Secure, SameSite=Strict cookies |
 
 ### Remaining Recommendations
 
-#### High Priority
-
-1. **JWT Token in WebSocket Query Parameter**
-   - **Location**: `backend/internal/handlers/websocket.go:47`, `web/composables/useWebSocket.ts:52`
-   - **Issue**: Token passed in URL query string, logged in server logs
-   - **Recommendation**: Use Authorization header for WebSocket upgrades
-
-2. **Weak Default JWT Secret**
-   - **Location**: `backend/internal/config/config.go:36`
-   - **Issue**: Default secret is insecure placeholder
-   - **Recommendation**: Require JWT_SECRET environment variable, fail to start if not set
-
-3. **Long JWT Expiry (7 days)**
-   - **Location**: `backend/internal/config/config.go:37`
-   - **Issue**: Extended access window for stolen tokens
-   - **Recommendation**: Reduce to 1-2 hours, implement refresh token rotation
-
-4. **iOS Token in UserDefaults**
-   - **Location**: `ios/Notes/Notes/Services/AuthService.swift`
-   - **Issue**: JWT stored in unencrypted UserDefaults
-   - **Recommendation**: Use iOS Keychain with proper access control
-
-5. **No Rate Limiting**
-   - **Location**: `backend/cmd/server/main.go`
-   - **Issue**: No rate limiting on auth endpoints
-   - **Recommendation**: Add rate limiting middleware (5 attempts/15min for login)
-
-6. **Password Requirements Too Weak**
-   - **Location**: `backend/internal/models/dto.go:40`
-   - **Issue**: Minimum 6 characters
-   - **Recommendation**: Increase to 12+ characters or add complexity requirements
-
 #### Medium Priority
 
-1. **No CSRF Protection**
-   - Add CSRF tokens for state-changing operations
-   - Use SameSite=Strict cookie attribute
+1. **JWT Token in WebSocket Query Parameter**
+   - **Location**: `backend/internal/handlers/websocket.go`, `web/composables/useWebSocket.ts`
+   - **Issue**: Token passed in URL query string for WebSocket connections
+   - **Mitigation**: Token is validated server-side; use HTTPS in production
+   - **Future**: Consider WebSocket subprotocol for auth header support
 
-2. **Frontend Cookie Security**
-   - **Location**: `web/stores/auth.ts:119`
-   - **Issue**: Missing HttpOnly, Secure, SameSite flags
-   - **Recommendation**: Set secure cookie attributes
+2. **Token Revocation / Logout**
+   - **Current**: Logout clears client tokens; server tokens remain valid until expiry
+   - **Recommendation**: Implement token blacklist for immediate revocation
 
-3. **No Token Revocation**
-   - Implement logout endpoint with token blacklist
-   - Revoke tokens on password change
+3. **Database SSL**
+   - **Current**: `sslmode=disable` in default config
+   - **Recommendation**: Use `sslmode=require` for production databases
 
-4. **Database SSL Disabled**
-   - **Location**: `backend/internal/config/config.go:35`
-   - **Issue**: `sslmode=disable` in default connection string
-   - **Recommendation**: Use `sslmode=require` in production
-
-5. **Debug Logging in iOS**
-   - **Location**: Multiple files in `ios/Notes/Notes/Services/`
-   - **Issue**: Print statements leak sensitive data
-   - **Recommendation**: Wrap in `#if DEBUG` guards
-
-6. **iOS Certificate Pinning**
-   - **Location**: `ios/Notes/Notes/Services/APIClient.swift`
-   - **Issue**: No certificate pinning implemented
-   - **Recommendation**: Implement SSL pinning for production
+4. **iOS Certificate Pinning**
+   - **Current**: Uses standard iOS TLS validation
+   - **Recommendation**: Implement certificate pinning for additional MITM protection
 
 #### Low Priority
 
-1. **Input Validation Enhancement**
-   - Add max length validation on note content/title
-   - Validate NoteType against allowed enum values
-   - Add username character restrictions
+1. **CSRF Protection**
+   - Current SameSite=Strict cookies provide basic protection
+   - Consider adding explicit CSRF tokens for additional security
 
-2. **Security Logging**
-   - Log authentication attempts (success/failure)
-   - Log authorization failures
-   - Implement audit trail for note modifications
-
-3. **Request Size Limits**
-   - Set MaxRequestBodySize in server config
-   - Enforce consistent limits across HTTP and WebSocket
+2. **Audit Trail**
+   - Add note modification logging for compliance requirements
 
 ## Environment Configuration
 
 ### Required for Production
 
 ```env
-# REQUIRED - Must be set in production
+# REQUIRED - Server will fail to start without these in production
 ENVIRONMENT=production
 JWT_SECRET=<generate-with-openssl-rand-base64-32>
 ALLOWED_ORIGINS=https://your-frontend-domain.com
@@ -118,22 +78,70 @@ ALLOWED_ORIGINS=https://your-frontend-domain.com
 DATABASE_URL=postgres://user:pass@host:5432/notes?sslmode=require
 ```
 
+### Configuration Options
+
+```env
+# Token expiry
+JWT_EXPIRY_MINUTES=60          # Access token lifetime (default: 60)
+REFRESH_EXPIRY_HOURS=168       # Refresh token lifetime (default: 168 = 7 days)
+
+# Rate limiting
+RATE_LIMIT_REQUESTS=100        # Requests per minute (default: 100)
+RATE_LIMIT_BURST=20            # Burst size (default: 20)
+
+# Request limits
+MAX_REQUEST_BODY_MB=10         # Maximum request body size (default: 10MB)
+```
+
 ### Generating a Secure JWT Secret
 
 ```bash
 openssl rand -base64 32
 ```
 
+## API Authentication
+
+The API uses JWT-based authentication with access and refresh tokens:
+
+### Token Response Format
+
+```json
+{
+  "access_token": "eyJhbGc...",
+  "refresh_token": "eyJhbGc...",
+  "expires_in": 3600,
+  "token_type": "Bearer",
+  "user": {
+    "id": "uuid",
+    "username": "string"
+  }
+}
+```
+
+### Token Refresh
+
+POST `/api/auth/refresh` with body:
+```json
+{
+  "refresh_token": "your-refresh-token"
+}
+```
+
 ## Deployment Checklist
 
 Before deploying to production:
 
+- [x] CORS restricted to specific origins
+- [x] Security headers implemented
+- [x] Rate limiting enabled
+- [x] JWT tokens use short expiry with refresh
+- [x] Password requirements enforced (12+ chars)
+- [x] Input validation on all endpoints
 - [ ] Set `ENVIRONMENT=production`
 - [ ] Generate and set strong `JWT_SECRET` (32+ characters)
 - [ ] Configure `ALLOWED_ORIGINS` with your frontend domain(s)
 - [ ] Enable database SSL (`sslmode=require`)
 - [ ] Configure HTTPS/TLS termination (nginx, load balancer)
-- [ ] Set up rate limiting at reverse proxy level
 - [ ] Review and rotate any exposed secrets
 - [ ] Enable GitHub Dependabot for dependency scanning
 - [ ] Run `npm audit` on frontend dependencies
