@@ -594,7 +594,7 @@ final class WebSocketService {
         // Reconnect when app comes to foreground
         if let token = currentToken {
             await connect(token: token)
-        } else if let token = UserDefaults.standard.string(forKey: Constants.Storage.authTokenKey) {
+        } else if let token = KeychainHelper.getAccessToken() {
             await connect(token: token)
         }
     }
