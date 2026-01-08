@@ -61,16 +61,10 @@ type UserDTO struct {
 	Username string `json:"username"`
 }
 
-// NoteType enum values
-const (
-	NoteTypeText      = "text"
-	NoteTypeChecklist = "checklist"
-)
-
 // ValidNoteTypes contains all valid note types
 var ValidNoteTypes = map[string]bool{
-	NoteTypeText:      true,
-	NoteTypeChecklist: true,
+	string(NoteTypeNote):      true,
+	string(NoteTypeChecklist): true,
 }
 
 // IsValidNoteType checks if the note type is valid
