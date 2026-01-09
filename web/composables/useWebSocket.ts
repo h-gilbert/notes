@@ -64,15 +64,13 @@ export function useWebSocket() {
       socket.value.onmessage = handleMessage
       socket.value.onclose = handleClose
       socket.value.onerror = handleError
-    } catch (error) {
-      console.error('WebSocket connection error:', error)
+    } catch {
       connectionStatus.value = 'disconnected'
       attemptReconnect(token)
     }
   }
 
   const handleOpen = () => {
-    console.log('WebSocket connected')
     connectionStatus.value = 'connected'
     reconnectAttempts.value = 0
     reconnectDelay = INITIAL_RECONNECT_DELAY
@@ -83,8 +81,8 @@ export function useWebSocket() {
     try {
       const message: WSMessage = JSON.parse(event.data)
       processMessage(message)
-    } catch (error) {
-      console.error('Failed to parse WebSocket message:', error)
+    } catch {
+      // Silently ignore malformed messages in production
     }
   }
 
@@ -117,12 +115,12 @@ export function useWebSocket() {
         break
 
       default:
-        console.log('Unknown WebSocket message type:', message.type)
+        // Unknown message type - ignore in production
+        break
     }
   }
 
   const handleClose = (event: CloseEvent) => {
-    console.log('WebSocket closed:', event.code, event.reason)
     connectionStatus.value = 'disconnected'
     stopPingInterval()
 
@@ -135,14 +133,12 @@ export function useWebSocket() {
     }
   }
 
-  const handleError = (event: Event) => {
-    console.error('WebSocket error:', event)
+  const handleError = (_event: Event) => {
     // onclose will be called after onerror
   }
 
   const attemptReconnect = (token: string) => {
     if (reconnectAttempts.value >= MAX_RECONNECT_ATTEMPTS) {
-      console.log('Max reconnect attempts reached')
       return
     }
 
@@ -151,7 +147,6 @@ export function useWebSocket() {
     }
 
     reconnectTimeout = setTimeout(() => {
-      console.log(`Reconnecting... attempt ${reconnectAttempts.value + 1}`)
       reconnectAttempts.value++
       reconnectDelay = Math.min(reconnectDelay * 2, 30000) // Max 30s delay
       connect(token)

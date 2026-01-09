@@ -138,8 +138,8 @@ onMounted(async () => {
 
   try {
     await notesStore.fetchNotes()
-  } catch (error) {
-    console.error('Failed to fetch notes:', error)
+  } catch {
+    // Notes fetch failed - store will track sync error state
   }
 })
 

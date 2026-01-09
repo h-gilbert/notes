@@ -145,11 +145,15 @@ actor WebSocketActor {
     }
 
     private func receiveLoop() async {
+        #if DEBUG
         print("🔄 WebSocket: Receive loop started")
+        #endif
         while !Task.isCancelled {
             do {
                 guard let task = webSocketTask else {
+                    #if DEBUG
                     print("⚠️ WebSocket: No task in receive loop")
+                    #endif
                     break
                 }
 
@@ -176,17 +180,21 @@ actor WebSocketActor {
     }
 
     private func handleReceivedData(_ data: Data) {
-        // Debug: print raw message
+        #if DEBUG
+        // Debug: print raw message (only in development builds)
         if let rawString = String(data: data, encoding: .utf8) {
             print("📥 WebSocket RAW: \(rawString)")
         }
+        #endif
 
         do {
             let decoder = JSONDecoder()
             let message = try decoder.decode(WSMessage.self, from: data)
             emit(.message(message))
         } catch {
+            #if DEBUG
             print("❌ WebSocket: Failed to decode message: \(error)")
+            #endif
         }
     }
 
@@ -207,7 +215,9 @@ actor WebSocketActor {
             do {
                 try await sendPing()
             } catch {
+                #if DEBUG
                 print("WebSocket: Ping failed: \(error)")
+                #endif
                 break
             }
         }
@@ -325,18 +335,26 @@ final class WebSocketService {
     private func handleEvent(_ event: WebSocketEvent) {
         switch event {
         case .message(let message):
+            #if DEBUG
             print("📨 WebSocket: Received message type: \(message.type.rawValue)")
+            #endif
             handleMessage(message)
         case .connected:
+            #if DEBUG
             print("✅ WebSocket: Connected successfully!")
+            #endif
             connectionStatus = .connected
             SyncService.shared.setWebSocketConnected(true)
         case .disconnected:
+            #if DEBUG
             print("❌ WebSocket: Disconnected")
+            #endif
             handleDisconnect()
         case .error(let errorMessage):
             lastError = WebSocketError.connectionFailed(errorMessage)
+            #if DEBUG
             print("⚠️ WebSocket error: \(errorMessage)")
+            #endif
         }
     }
 
@@ -396,12 +414,16 @@ final class WebSocketService {
         switch message.type {
         case .noteCreated, .noteUpdated:
             if let payload = message.payload as? NoteChangePayload {
-                print("📝 WebSocket: \(message.type.rawValue) - '\(payload.note.title)'")
+                #if DEBUG
+                print("📝 WebSocket: \(message.type.rawValue)")
+                #endif
                 upsertNote(from: payload.note)
             }
         case .noteDeleted:
             if let payload = message.payload as? NoteDeletePayload {
-                print("🗑️ WebSocket: Note deleted - \(payload.noteId)")
+                #if DEBUG
+                print("🗑️ WebSocket: Note deleted")
+                #endif
                 deleteNote(serverID: payload.noteId)
             }
         case .pong:
@@ -425,7 +447,9 @@ final class WebSocketService {
 
     private func upsertNote(from dto: NoteDTO) {
         guard let context = modelContext else {
+            #if DEBUG
             print("WebSocket: ModelContext not configured")
+            #endif
             return
         }
 
@@ -447,7 +471,9 @@ final class WebSocketService {
             if let existing = existingNote {
                 // Skip if local note has pending changes (avoid overwriting local edits)
                 if existing.syncStatus == .pending {
+                    #if DEBUG
                     print("WebSocket: Skipping update for note with pending local changes")
+                    #endif
                     return
                 }
                 note = existing
@@ -462,7 +488,9 @@ final class WebSocketService {
 
                 for localNote in notesWithoutServerID {
                     if localNote.title == dto.title && localNote.content == dto.content {
+                        #if DEBUG
                         print("WebSocket: Found matching local note without serverID, updating serverID")
+                        #endif
                         localNote.serverID = dto.id
                         localNote.syncStatus = .synced
                         try context.save()
@@ -480,7 +508,9 @@ final class WebSocketService {
                     if recentNote.title == dto.title &&
                        recentNote.content == dto.content &&
                        recentNote.serverID != dto.id {
-                        print("WebSocket: Found recent note with matching content, updating serverID from '\(recentNote.serverID ?? "nil")' to '\(dto.id)'")
+                        #if DEBUG
+                        print("WebSocket: Found recent note with matching content, updating serverID")
+                        #endif
                         recentNote.serverID = dto.id
                         recentNote.syncStatus = .synced
                         try context.save()
@@ -489,7 +519,9 @@ final class WebSocketService {
                 }
 
                 // This is a genuinely new note from another device
-                print("WebSocket: Creating new note from server - '\(dto.title)'")
+                #if DEBUG
+                print("WebSocket: Creating new note from server")
+                #endif
                 note = Note()
                 context.insert(note)
             }
@@ -532,15 +564,21 @@ final class WebSocketService {
             }
 
             try context.save()
+            #if DEBUG
             print("✨ WebSocket: Note saved to local database")
+            #endif
         } catch {
+            #if DEBUG
             print("❌ WebSocket: Failed to upsert note: \(error)")
+            #endif
         }
     }
 
     private func deleteNote(serverID: String) {
         guard let context = modelContext else {
+            #if DEBUG
             print("WebSocket: ModelContext not configured")
+            #endif
             return
         }
 
@@ -553,7 +591,9 @@ final class WebSocketService {
                 try context.save()
             }
         } catch {
+            #if DEBUG
             print("WebSocket: Failed to delete note: \(error)")
+            #endif
         }
     }
 

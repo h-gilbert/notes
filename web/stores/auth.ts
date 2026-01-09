@@ -133,8 +133,8 @@ export const useAuthStore = defineStore('auth', {
         const response = await api.refreshToken(this.refreshToken)
         this.setAuthData(response.access_token, response.refresh_token, response.expires_in, response.user)
         this.scheduleTokenRefresh()
-      } catch (error) {
-        console.error('Failed to refresh token:', error)
+      } catch {
+        // Token refresh failed - logout user
         this.logout()
       }
     },

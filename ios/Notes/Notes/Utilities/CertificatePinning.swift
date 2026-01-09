@@ -48,11 +48,23 @@ enum CertificatePinningConfig {
            !hashes.isEmpty {
             return hashes
         }
-        // Fallback - should be configured in build settings
-        // IMPORTANT: Replace this with your actual public key hash before release
+
+        // ⚠️ SECURITY WARNING: Certificate pinning is REQUIRED for production!
+        // Without pinning, the app is vulnerable to man-in-the-middle attacks.
+        //
+        // To generate your certificate pin hash, run:
+        // openssl s_client -connect YOUR_DOMAIN:443 -servername YOUR_DOMAIN 2>/dev/null | \
+        //   openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | \
+        //   openssl dgst -sha256 -binary | base64
+        //
+        // Then either:
+        // 1. Add PINNED_PUBLIC_KEY_HASHES array to Info.plist, OR
+        // 2. Add the hash(es) to the array below
+        //
+        // Include at least 2 pins: current cert + backup cert for rotation
         return [
-            // Primary certificate public key hash
-            // "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
+            // notes.hamishgilbert.com certificate (generated 2026-01-09)
+            "gXP2zdjWMTp7cLBOgHatnMUsbhM3tUSGKuqIePzNvQk="
         ]
         #endif
     }

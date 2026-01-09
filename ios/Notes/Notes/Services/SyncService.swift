@@ -211,9 +211,11 @@ final class SyncService {
                 note.title == dto.title &&
                 note.content == dto.content
             }
+            #if DEBUG
             if existingNote != nil {
-                print("SyncService: Matched pending note by content - '\(dto.title)'")
+                print("SyncService: Matched pending note by content")
             }
+            #endif
         }
 
         // Also check recently created notes that might have been synced but with different ID
@@ -225,9 +227,11 @@ final class SyncService {
                 note.title == dto.title &&
                 note.content == dto.content
             }
+            #if DEBUG
             if existingNote != nil {
-                print("SyncService: Matched recent note by content - '\(dto.title)'")
+                print("SyncService: Matched recent note by content")
             }
+            #endif
         }
 
         let note: Note
@@ -238,13 +242,17 @@ final class SyncService {
                 // Local changes are newer, mark as conflict but still update serverID
                 existing.serverID = dto.id
                 existing.syncStatus = .conflict
-                print("SyncService: Conflict detected for '\(dto.title)', keeping local changes")
+                #if DEBUG
+                print("SyncService: Conflict detected, keeping local changes")
+                #endif
                 return
             }
             note = existing
         } else {
             // This is genuinely a new note from the server (created on another device)
-            print("SyncService: Creating new note from server - '\(dto.title)'")
+            #if DEBUG
+            print("SyncService: Creating new note from server")
+            #endif
             note = Note()
             context.insert(note)
         }

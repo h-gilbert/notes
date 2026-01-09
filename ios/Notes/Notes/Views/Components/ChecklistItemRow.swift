@@ -58,15 +58,12 @@ struct ChecklistItemRow: View {
                     item.note?.touch()
                 }
 
-            if isFocused {
-                Button(action: onDelete) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(Theme.Colors.textTertiary)
-                }
-                .buttonStyle(.plain)
-                .transition(.opacity.combined(with: .scale))
+            Button(action: onDelete) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(Theme.Colors.textTertiary)
             }
+            .buttonStyle(.plain)
         }
         .padding(.vertical, Theme.Spacing.xs)
         .contentShape(Rectangle())

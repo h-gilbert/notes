@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -96,6 +97,29 @@ func main() {
 	// Setup router
 	router := gin.Default()
 
+	// Configure trusted proxies for accurate client IP detection
+	// In production behind a load balancer/reverse proxy, set TRUSTED_PROXIES env var
+	// Example: TRUSTED_PROXIES=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+	if trustedProxies := os.Getenv("TRUSTED_PROXIES"); trustedProxies != "" {
+		proxies := []string{}
+		for _, p := range splitAndTrim(trustedProxies, ",") {
+			if p != "" {
+				proxies = append(proxies, p)
+			}
+		}
+		if len(proxies) > 0 {
+			if err := router.SetTrustedProxies(proxies); err != nil {
+				log.Printf("[WARN] Failed to set trusted proxies: %v", err)
+			} else {
+				log.Printf("[INFO] Configured trusted proxies: %v", proxies)
+			}
+		}
+	} else if cfg.IsProduction() {
+		// In production without explicit config, trust no proxies (use direct connection IP)
+		router.SetTrustedProxies(nil)
+		log.Println("[WARN] No TRUSTED_PROXIES configured - using direct connection IP only")
+	}
+
 	// Set max request body size
 	router.MaxMultipartMemory = int64(cfg.MaxRequestBodyMB) << 20
 
@@ -172,4 +196,16 @@ func main() {
 	}
 
 	log.Println("Server exited")
+}
+
+// splitAndTrim splits a string by separator and trims whitespace from each part
+func splitAndTrim(s, sep string) []string {
+	parts := []string{}
+	for _, part := range strings.Split(s, sep) {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			parts = append(parts, trimmed)
+		}
+	}
+	return parts
 }

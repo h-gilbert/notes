@@ -10,8 +10,9 @@ struct NoteEditorView: View {
 
     @State private var dragOffset: CGFloat = 0
     @State private var syncService = SyncService.shared
-    @State private var cursorAnchorID = "cursorAnchor"
+    @State private var bottomAnchorID = "bottomAnchor"
     @State private var keyboardObserver = KeyboardObserver()
+    @State private var wasContentFocused = false
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isContentFocused: Bool
 
@@ -113,10 +114,10 @@ struct NoteEditorView: View {
                     titleField
                     contentField
 
-                    // Invisible anchor for scrolling to cursor position
+                    // Bottom anchor for initial scroll when keyboard appears
                     Color.clear
                         .frame(height: 1)
-                        .id(cursorAnchorID)
+                        .id(bottomAnchorID)
 
                     // Tappable area to focus content field
                     Color.clear
@@ -129,26 +130,26 @@ struct NoteEditorView: View {
                 }
                 .padding(.horizontal, Theme.Spacing.lg)
                 .padding(.top, Theme.Spacing.sm)
-                .padding(.bottom, keyboardObserver.keyboardHeight > 0 ? keyboardObserver.keyboardHeight - geometry.safeAreaInsets.bottom : 0)
+                .padding(.bottom, keyboardObserver.keyboardHeight > 0 ? keyboardObserver.keyboardHeight + 40 : 0)
             }
             .scrollDismissesKeyboard(.interactively)
             .frame(minHeight: geometry.size.height - topPadding - 100)
             .simultaneousGesture(dismissDragGesture)
-            .onChange(of: keyboardObserver.keyboardHeight) { oldValue, newValue in
-                // When keyboard appears, scroll to show cursor
-                if newValue > oldValue && isContentFocused {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        withAnimation {
-                            proxy.scrollTo(cursorAnchorID, anchor: .bottom)
-                        }
-                    }
+            .onChange(of: isContentFocused) { oldValue, newValue in
+                // Track focus changes to know when user first focuses content
+                if newValue && !oldValue {
+                    wasContentFocused = false
                 }
             }
-            .onChange(of: note.content) { _, _ in
-                if isContentFocused && keyboardObserver.keyboardHeight > 0 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            proxy.scrollTo(cursorAnchorID, anchor: .bottom)
+            .onChange(of: keyboardObserver.keyboardHeight) { oldValue, newValue in
+                // Only scroll to bottom when keyboard FIRST appears after focusing content
+                // This handles the initial focus case where user taps to start editing
+                // Do NOT scroll when user is repositioning cursor (keyboard already visible)
+                if newValue > oldValue && isContentFocused && !wasContentFocused {
+                    wasContentFocused = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        withAnimation {
+                            proxy.scrollTo(bottomAnchorID, anchor: .bottom)
                         }
                     }
                 }

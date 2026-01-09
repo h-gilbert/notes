@@ -93,9 +93,8 @@ export const useNotesStore = defineStore('notes', {
         if (index !== -1) {
           this.notes[index] = { ...this.dtoToNote(created), syncStatus: 'synced' }
         }
-      } catch (error) {
-        // Keep local note with pending status
-        console.error('Failed to create note on server:', error)
+      } catch {
+        // Keep local note with pending status - will retry on next sync
       }
 
       return note
@@ -117,8 +116,8 @@ export const useNotesStore = defineStore('notes', {
         if (idx !== -1) {
           this.notes[idx] = { ...this.dtoToNote(updated), syncStatus: 'synced' }
         }
-      } catch (error) {
-        console.error('Failed to update note on server:', error)
+      } catch {
+        // Keep pending status - will retry on next sync
       }
     },
 
@@ -130,8 +129,8 @@ export const useNotesStore = defineStore('notes', {
 
       try {
         await api.deleteNote(id)
-      } catch (error) {
-        console.error('Failed to delete note on server:', error)
+      } catch {
+        // Deletion will be retried on next sync
       }
     },
 

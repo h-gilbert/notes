@@ -15,7 +15,7 @@ struct RegisterView: View {
         !username.isEmpty &&
         !password.isEmpty &&
         passwordsMatch &&
-        password.count >= 6 &&
+        password.count >= 12 &&
         !authService.isLoading
     }
 
@@ -56,11 +56,11 @@ struct RegisterView: View {
 
                 // Validation messages
                 VStack(spacing: 4) {
-                    if !password.isEmpty && password.count < 6 {
+                    if !password.isEmpty && password.count < 12 {
                         HStack {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(.red)
-                            Text("Password must be at least 6 characters")
+                            Text("Password must be at least 12 characters")
                             Spacer()
                         }
                         .font(.caption)

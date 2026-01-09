@@ -154,7 +154,7 @@ struct ChecklistEditorView: View {
                 }
                 .padding(.horizontal, Theme.Spacing.lg)
                 .padding(.top, Theme.Spacing.sm)
-                .padding(.bottom, keyboardObserver.keyboardHeight > 0 ? keyboardObserver.keyboardHeight - geometry.safeAreaInsets.bottom : 0)
+                .padding(.bottom, keyboardObserver.keyboardHeight > 0 ? keyboardObserver.keyboardHeight - geometry.safeAreaInsets.bottom + 60 : 0)
             }
             .scrollDismissesKeyboard(.interactively)
             .frame(minHeight: geometry.size.height - topPadding - 100)
@@ -162,12 +162,12 @@ struct ChecklistEditorView: View {
             .onChange(of: keyboardObserver.keyboardHeight) { oldValue, newValue in
                 // When keyboard appears, scroll to show the focused field
                 if newValue > oldValue && isAnyFieldFocused {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                         withAnimation {
                             if isNewItemFocused {
-                                proxy.scrollTo(addItemRowID, anchor: .bottom)
+                                proxy.scrollTo(addItemRowID, anchor: .top)
                             } else if let itemID = focusedItemID {
-                                proxy.scrollTo(itemID, anchor: .center)
+                                proxy.scrollTo(itemID, anchor: .top)
                             }
                         }
                     }
@@ -177,7 +177,7 @@ struct ChecklistEditorView: View {
                 if let itemID = itemID, keyboardObserver.keyboardHeight > 0 {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         withAnimation {
-                            proxy.scrollTo(itemID, anchor: .center)
+                            proxy.scrollTo(itemID, anchor: .top)
                         }
                     }
                 }
@@ -186,7 +186,7 @@ struct ChecklistEditorView: View {
                 if isNewItemFocused && keyboardObserver.keyboardHeight > 0 {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                         withAnimation(.easeOut(duration: 0.15)) {
-                            proxy.scrollTo(addItemRowID, anchor: .bottom)
+                            proxy.scrollTo(addItemRowID, anchor: .top)
                         }
                     }
                 }

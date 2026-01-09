@@ -12,7 +12,7 @@ struct ChangePasswordView: View {
 
     private var isFormValid: Bool {
         !currentPassword.isEmpty &&
-        newPassword.count >= 6 &&
+        newPassword.count >= 12 &&
         newPassword == confirmPassword
     }
 
@@ -40,8 +40,8 @@ struct ChangePasswordView: View {
                     Text("New Password")
                 } footer: {
                     VStack(alignment: .leading, spacing: 4) {
-                        if newPassword.count > 0 && newPassword.count < 6 {
-                            Text("Password must be at least 6 characters")
+                        if newPassword.count > 0 && newPassword.count < 12 {
+                            Text("Password must be at least 12 characters")
                                 .foregroundColor(.orange)
                         }
                         if !passwordsMatch {
