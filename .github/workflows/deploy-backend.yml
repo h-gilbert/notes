@@ -63,7 +63,7 @@ jobs:
           tags: tag:ci
 
       - name: Run migrations
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.4
         with:
           host: ${{ secrets.SERVER_TAILSCALE_IP }}
           username: fred
@@ -121,7 +121,7 @@ jobs:
             fi
 
       - name: Deploy to server
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.4
         with:
           host: ${{ secrets.SERVER_TAILSCALE_IP }}
           username: fred
