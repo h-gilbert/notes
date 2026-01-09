@@ -43,3 +43,5 @@ build/
 # Misc files that shouldn't be tracked
 *.pdf
 commands.txt
+claude.md
+CLAUDE.md
