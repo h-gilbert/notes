@@ -33,6 +33,9 @@ type CSRFConfig struct {
 	ExemptMethods []string
 	// ExemptPaths are URL paths that don't require CSRF validation
 	ExemptPaths []string
+	// ExemptPathPrefixes are URL path prefixes that don't require CSRF validation
+	// Useful for APIs that use Bearer token authentication (immune to CSRF)
+	ExemptPathPrefixes []string
 }
 
 // DefaultCSRFConfig returns a default CSRF configuration
@@ -48,7 +51,12 @@ func DefaultCSRFConfig(isProduction bool) CSRFConfig {
 			"/api/auth/login",
 			"/api/auth/register",
 			"/api/auth/refresh",
+			"/api/auth/logout",
 			"/api/ws", // WebSocket uses its own auth mechanism
+		},
+		// Exempt paths that use Bearer token authentication (immune to CSRF)
+		ExemptPathPrefixes: []string{
+			"/api/notes", // Notes API uses JWT auth, not vulnerable to CSRF
 		},
 	}
 }
@@ -80,9 +88,19 @@ func NewCSRFMiddleware(config CSRFConfig) *CSRFMiddleware {
 // Handler returns the Gin middleware handler
 func (csrf *CSRFMiddleware) Handler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Check if path is exempt
-		for _, path := range csrf.config.ExemptPaths {
-			if c.Request.URL.Path == path {
+		path := c.Request.URL.Path
+
+		// Check if path is exempt (exact match)
+		for _, exemptPath := range csrf.config.ExemptPaths {
+			if path == exemptPath {
+				c.Next()
+				return
+			}
+		}
+
+		// Check if path matches an exempt prefix (for APIs with Bearer auth)
+		for _, prefix := range csrf.config.ExemptPathPrefixes {
+			if len(path) >= len(prefix) && path[:len(prefix)] == prefix {
 				c.Next()
 				return
 			}
