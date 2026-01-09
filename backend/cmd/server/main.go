@@ -80,6 +80,13 @@ func main() {
 	generalRateLimiter := middleware.NewRateLimiter(cfg.RateLimitRequests, time.Minute, cfg.RateLimitBurst)
 	authRateLimiter := middleware.NewAuthRateLimiter()
 
+	// Initialize CSRF middleware
+	csrfConfig := middleware.DefaultCSRFConfig(cfg.IsProduction())
+	csrfMiddleware := middleware.NewCSRFMiddleware(csrfConfig)
+
+	// Initialize audit logger
+	auditLogger := middleware.NewAuditLogger(true) // Enable audit logging
+
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService)
 	notesHandler := handlers.NewNotesHandler(noteRepo, syncService, wsHub)
@@ -96,6 +103,7 @@ func main() {
 	router.Use(middleware.SecurityHeaders())
 	router.Use(middleware.CORSMiddleware(cfg.AllowedOrigins))
 	router.Use(middleware.RateLimitMiddleware(generalRateLimiter))
+	router.Use(csrfMiddleware.Handler())
 
 	// Health check (no rate limit)
 	router.GET("/health", func(c *gin.Context) {
@@ -118,9 +126,10 @@ func main() {
 			auth.GET("/me", middleware.AuthMiddleware(authService), authHandler.Me)
 		}
 
-		// Notes routes (protected)
+		// Notes routes (protected with audit logging)
 		notes := api.Group("/notes")
 		notes.Use(middleware.AuthMiddleware(authService))
+		notes.Use(middleware.AuditMiddleware(auditLogger, "notes"))
 		{
 			notes.GET("", notesHandler.List)
 			notes.POST("", notesHandler.Create)

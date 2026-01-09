@@ -37,7 +37,7 @@ type SyncResponse struct {
 
 type AuthRequest struct {
 	Username string `json:"username" binding:"required,min=3,max=50,alphanum"`
-	Password string `json:"password" binding:"required,min=6,max=128"`
+	Password string `json:"password" binding:"required,min=12,max=128"`
 }
 
 type RefreshRequest struct {
@@ -50,7 +50,7 @@ type LogoutRequest struct {
 
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"current_password" binding:"required,min=6,max=128"`
-	NewPassword     string `json:"new_password" binding:"required,min=6,max=128"`
+	NewPassword     string `json:"new_password" binding:"required,min=12,max=128"`
 }
 
 type AuthResponse struct {

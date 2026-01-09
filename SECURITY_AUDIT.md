@@ -2,7 +2,7 @@
 
 **Date**: January 2025
 **Scope**: Full-stack security audit for public GitHub repository
-**Status**: Phase 1 Complete, Phase 2 Complete, Phase 3 Complete
+**Status**: Phase 1 Complete, Phase 2 Complete, Phase 3 Complete, Phase 4 Complete
 
 ---
 
@@ -291,6 +291,82 @@ File: ios/Notes/Notes/Utilities/Constants.swift
 - RELEASE: Reads from Info.plist API_BASE_URL key
 ```
 
+### Phase 4: Final Security Enhancements (Commit: pending)
+
+#### Password Complexity Validation
+```
+File: backend/internal/validation/password.go (NEW)
+- Minimum 12 characters
+- At least one uppercase letter
+- At least one lowercase letter
+- At least one digit
+- At least one special character (!@#$%^&*()_+-=[]{}|;':\",./<>?`~)
+- Configurable requirements via PasswordRequirements struct
+
+File: backend/internal/services/auth_service.go
+- Register() validates password complexity before creating user
+- ChangePassword() validates new password complexity
+- Added ErrWeakPassword error type
+
+File: backend/internal/handlers/auth.go
+- Updated error messages with detailed password requirements
+
+File: backend/internal/models/dto.go
+- Password minimum length updated from 6 to 12 characters
+```
+
+#### CSRF Token Protection
+```
+File: backend/internal/middleware/csrf.go (NEW)
+- Double-submit cookie pattern implementation
+- Cryptographically secure token generation (32 bytes)
+- Token stored in cookie (csrf_token) and validated via header (X-CSRF-Token)
+- Configurable exempt paths (login, register, refresh, WebSocket)
+- Configurable exempt methods (GET, HEAD, OPTIONS)
+- Automatic token cleanup for expired entries
+- Production mode uses Secure cookies with SameSite=Strict
+
+File: backend/cmd/server/main.go
+- CSRF middleware integrated into global middleware stack
+```
+
+#### Audit Logging
+```
+File: backend/internal/middleware/audit.go (NEW)
+- Structured audit log entries with:
+  - Timestamp, UserID, Action, Resource, ResourceID
+  - ClientIP, UserAgent, StatusCode, Duration
+- HTTP method to action mapping (POST=CREATE, GET=READ, PUT/PATCH=UPDATE, DELETE=DELETE)
+- Separate auth event logging (LogAuthEvent)
+- Separate sync event logging (LogSyncEvent)
+
+File: backend/cmd/server/main.go
+- Audit middleware applied to /api/notes routes
+- All CRUD operations now logged
+```
+
+#### Dependency Scanning
+```
+File: .github/dependabot.yml (NEW)
+- Go modules scanning (backend)
+- npm scanning (web frontend)
+- GitHub Actions scanning
+- Weekly schedule (Mondays)
+- Auto-grouping of minor/patch updates
+- Commit message prefixes for organization
+```
+
+#### Security CI/CD Pipeline
+```
+File: .github/workflows/security.yml (NEW)
+- govulncheck for Go vulnerability scanning
+- go vet for static analysis
+- npm audit for JavaScript dependencies
+- CodeQL analysis for both Go and JavaScript
+- TruffleHog for secrets scanning
+- Runs on push, PR, and weekly schedule
+```
+
 ---
 
 ## Remaining Work
@@ -308,16 +384,16 @@ File: ios/Notes/Notes/Utilities/Constants.swift
 | Task | Description | Effort | Status |
 |------|-------------|--------|--------|
 | **WebSocket Token in Header** | Move token from query param to WebSocket subprotocol | Medium | ✅ Done |
-| **CSRF Tokens** | Add explicit CSRF protection beyond SameSite cookies | Medium | Pending |
-| **Audit Logging** | Log note CRUD operations for compliance | Low | Pending |
+| **CSRF Tokens** | Add explicit CSRF protection beyond SameSite cookies | Medium | ✅ Done |
+| **Audit Logging** | Log note CRUD operations for compliance | Low | ✅ Done |
 
 ### Low Priority
 
-| Task | Description | Effort |
-|------|-------------|--------|
-| **Dependency Scanning** | Enable GitHub Dependabot | Low |
-| **Go Vulnerability Scanning** | Add govulncheck to CI/CD | Low |
-| **Password Complexity** | Add uppercase/lowercase/number/symbol requirements | Low |
+| Task | Description | Effort | Status |
+|------|-------------|--------|--------|
+| **Dependency Scanning** | Enable GitHub Dependabot | Low | ✅ Done |
+| **Go Vulnerability Scanning** | Add govulncheck to CI/CD | Low | ✅ Done |
+| **Password Complexity** | Add uppercase/lowercase/number/symbol requirements | Low | ✅ Done |
 
 ### Infrastructure (Outside Codebase)
 
@@ -437,10 +513,22 @@ The authentication endpoints now return a different response format:
 
 ### Password Requirements
 
-- **Before**: Minimum 6 characters
-- **After**: Minimum 12 characters
+- **Before**: Minimum 6 characters, no complexity rules
+- **After**: Minimum 12 characters with complexity requirements:
+  - At least one uppercase letter
+  - At least one lowercase letter
+  - At least one digit
+  - At least one special character
 
-Existing users with shorter passwords will need to update their passwords.
+Existing users with shorter or non-compliant passwords will need to update their passwords.
+
+### CSRF Token Requirement
+
+State-changing requests (POST, PUT, PATCH, DELETE) now require a CSRF token:
+- Cookie: `csrf_token` (set automatically on first GET request)
+- Header: `X-CSRF-Token` (must match cookie value)
+
+Exempt endpoints: `/api/auth/login`, `/api/auth/register`, `/api/auth/refresh`, `/api/ws`
 
 ### Username Requirements
 
@@ -495,6 +583,7 @@ POST /api/auth/logout-all  - Revoke ALL tokens for user (requires auth)
 | `a4d1886` | Phase 1: Security audit - Fix CORS, add security headers, remove exposed secrets |
 | `19ef286` | Phase 2: Implement comprehensive security hardening |
 | *pending* | Phase 3: Token revocation, database SSL, iOS cert pinning, WebSocket auth |
+| *pending* | Phase 4: Password complexity, CSRF protection, audit logging, Dependabot, govulncheck |
 
 ---
 
@@ -513,6 +602,19 @@ POST /api/auth/logout-all  - Revoke ALL tokens for user (requires auth)
 - `backend/internal/repository/token_blacklist_repo.go` - Token revocation repository
 - `ios/Notes/Notes/Utilities/CertificatePinning.swift` - iOS SSL certificate pinning
 - `deploy/migrations/001-security-hardening.sh` - CI/CD migration script
+
+### New Files - Phase 4
+- `backend/internal/validation/password.go` - Password complexity validation
+- `backend/internal/middleware/csrf.go` - CSRF token protection middleware
+- `backend/internal/middleware/audit.go` - Audit logging middleware
+- `.github/dependabot.yml` - Dependabot configuration for dependency scanning
+- `.github/workflows/security.yml` - Security scanning CI/CD workflow (govulncheck, CodeQL, npm audit, TruffleHog)
+
+### Modified Files - Phase 4
+- `backend/internal/models/dto.go` - Password minimum length updated to 12 characters
+- `backend/internal/services/auth_service.go` - Password complexity validation in Register/ChangePassword
+- `backend/internal/handlers/auth.go` - Detailed password requirement error messages
+- `backend/cmd/server/main.go` - CSRF middleware and audit logging integration
 
 ### Modified Files - Phase 3
 - `backend/internal/database/postgres.go` - Added token_blacklist table

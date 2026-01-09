@@ -36,6 +36,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			response.Conflict(c, "username already exists")
 			return
 		}
+		if errors.Is(err, services.ErrWeakPassword) {
+			response.BadRequest(c, "password does not meet complexity requirements: must be 12-128 characters with at least one uppercase letter, one lowercase letter, one digit, and one special character")
+			return
+		}
 		response.InternalError(c, "failed to register user")
 		return
 	}
@@ -182,7 +186,7 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	var req models.ChangePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "invalid request: current_password and new_password are required (6-128 characters)")
+		response.BadRequest(c, "invalid request: current_password and new_password are required (new password must be 12-128 characters)")
 		return
 	}
 
@@ -192,6 +196,10 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	if err := h.authService.ChangePassword(c.Request.Context(), userID, req.CurrentPassword, req.NewPassword, clientIP); err != nil {
 		if errors.Is(err, services.ErrPasswordMismatch) {
 			response.Unauthorized(c, "current password is incorrect")
+			return
+		}
+		if errors.Is(err, services.ErrWeakPassword) {
+			response.BadRequest(c, "new password does not meet complexity requirements: must be 12-128 characters with at least one uppercase letter, one lowercase letter, one digit, and one special character")
 			return
 		}
 		response.InternalError(c, "failed to change password")

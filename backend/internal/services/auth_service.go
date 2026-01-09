@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hamishgilbert/notes-app/backend/internal/models"
 	"github.com/hamishgilbert/notes-app/backend/internal/repository"
+	"github.com/hamishgilbert/notes-app/backend/internal/validation"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -20,6 +21,7 @@ var (
 	ErrTokenExpired       = errors.New("token expired")
 	ErrTokenRevoked       = errors.New("token revoked")
 	ErrPasswordMismatch   = errors.New("current password is incorrect")
+	ErrWeakPassword       = errors.New("password does not meet complexity requirements")
 )
 
 // TokenType represents the type of JWT token
@@ -62,6 +64,12 @@ func NewAuthService(userRepo *repository.UserRepository, blacklistRepo *reposito
 }
 
 func (s *AuthService) Register(ctx context.Context, username, password string, clientIP string) (*models.User, *TokenPair, error) {
+	// Validate password complexity
+	if err := validation.ValidatePasswordDefault(password); err != nil {
+		log.Printf("[SECURITY] Registration rejected - weak password for username: %s from IP: %s - %v", username, clientIP, err)
+		return nil, nil, ErrWeakPassword
+	}
+
 	// Check if user exists
 	_, err := s.userRepo.GetByUsername(ctx, username)
 	if err == nil {
@@ -350,6 +358,12 @@ func (s *AuthService) LogoutAll(ctx context.Context, userID uuid.UUID, clientIP 
 
 // ChangePassword changes a user's password after verifying the current password
 func (s *AuthService) ChangePassword(ctx context.Context, userID uuid.UUID, currentPassword, newPassword, clientIP string) error {
+	// Validate new password complexity
+	if err := validation.ValidatePasswordDefault(newPassword); err != nil {
+		log.Printf("[SECURITY] Password change rejected - weak password for user ID: %s from IP: %s - %v", userID.String(), clientIP, err)
+		return ErrWeakPassword
+	}
+
 	// Get user
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
