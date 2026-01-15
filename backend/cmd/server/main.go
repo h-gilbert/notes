@@ -221,18 +221,29 @@ func splitAndTrim(s, sep string) []string {
 
 // seedDemoAccount creates a demo user with sample notes if it doesn't exist
 func seedDemoAccount(ctx context.Context, userRepo *repository.UserRepository, noteRepo *repository.NoteRepository) error {
+	demoPassword := "DemoPassword123!"
+
 	// Check if demo user already exists
-	_, err := userRepo.GetByUsername(ctx, "demo")
+	existingUser, err := userRepo.GetByUsername(ctx, "demo")
 	if err == nil {
-		log.Println("Demo account already exists")
+		// Demo user exists - ensure password is correct
+		hashedPassword, hashErr := bcrypt.GenerateFromPassword([]byte(demoPassword), bcrypt.DefaultCost)
+		if hashErr != nil {
+			return hashErr
+		}
+		if updateErr := userRepo.UpdatePassword(ctx, existingUser.ID, string(hashedPassword)); updateErr != nil {
+			log.Printf("[WARN] Failed to update demo password: %v", updateErr)
+		} else {
+			log.Println("Demo account password updated")
+		}
 		return nil
 	}
 	if !errors.Is(err, repository.ErrUserNotFound) {
 		return err
 	}
 
-	// Create demo user with password: DemoPassword123!
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("DemoPassword123!"), bcrypt.DefaultCost)
+	// Create demo user
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(demoPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
