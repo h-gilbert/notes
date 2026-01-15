@@ -37,10 +37,18 @@
           </button>
         </form>
 
-        <p class="footer">
-          Don't have an account?
-          <NuxtLink to="/register" class="link">Sign up</NuxtLink>
-        </p>
+        <div class="divider">
+          <span>or</span>
+        </div>
+
+        <button
+          type="button"
+          class="btn btn-secondary demo-btn"
+          :disabled="isLoading"
+          @click="loginAsDemo"
+        >
+          {{ isLoading ? 'Loading...' : 'Try Demo' }}
+        </button>
       </div>
     </NuxtLayout>
   </div>
@@ -69,6 +77,20 @@ const handleSubmit = async () => {
     router.push('/')
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Login failed'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const loginAsDemo = async () => {
+  error.value = ''
+  isLoading.value = true
+
+  try {
+    await authStore.login('demo', 'DemoPassword123!')
+    router.push('/')
+  } catch (e) {
+    error.value = 'Demo login failed. Please try again.'
   } finally {
     isLoading.value = false
   }
@@ -120,19 +142,26 @@ const handleSubmit = async () => {
   margin-top: var(--spacing-sm);
 }
 
-.footer {
-  margin-top: var(--spacing-lg);
-  text-align: center;
+.divider {
+  display: flex;
+  align-items: center;
+  margin: var(--spacing-lg) 0;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.divider span {
+  padding: 0 var(--spacing-md);
   color: var(--color-text-secondary);
   font-size: 14px;
 }
 
-.link {
-  color: var(--color-accent);
-  font-weight: 500;
-}
-
-.link:hover {
-  text-decoration: underline;
+.demo-btn {
+  width: 100%;
 }
 </style>

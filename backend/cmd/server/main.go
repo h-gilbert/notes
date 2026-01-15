@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -11,14 +12,17 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/hamishgilbert/notes-app/backend/internal/config"
 	"github.com/hamishgilbert/notes-app/backend/internal/database"
 	"github.com/hamishgilbert/notes-app/backend/internal/handlers"
 	"github.com/hamishgilbert/notes-app/backend/internal/middleware"
+	"github.com/hamishgilbert/notes-app/backend/internal/models"
 	"github.com/hamishgilbert/notes-app/backend/internal/repository"
 	"github.com/hamishgilbert/notes-app/backend/internal/services"
 	"github.com/hamishgilbert/notes-app/backend/internal/websocket"
 	"github.com/joho/godotenv"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
@@ -52,6 +56,11 @@ func main() {
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(db.Pool)
 	noteRepo := repository.NewNoteRepository(db.Pool)
+
+	// Seed demo account
+	if err := seedDemoAccount(context.Background(), userRepo, noteRepo); err != nil {
+		log.Printf("[WARN] Failed to seed demo account: %v", err)
+	}
 	tokenBlacklistRepo := repository.NewTokenBlacklistRepository(db.Pool)
 
 	// Initialize services
@@ -208,4 +217,92 @@ func splitAndTrim(s, sep string) []string {
 		}
 	}
 	return parts
+}
+
+// seedDemoAccount creates a demo user with sample notes if it doesn't exist
+func seedDemoAccount(ctx context.Context, userRepo *repository.UserRepository, noteRepo *repository.NoteRepository) error {
+	// Check if demo user already exists
+	_, err := userRepo.GetByUsername(ctx, "demo")
+	if err == nil {
+		log.Println("Demo account already exists")
+		return nil
+	}
+	if !errors.Is(err, repository.ErrUserNotFound) {
+		return err
+	}
+
+	// Create demo user with password: DemoPassword123!
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("DemoPassword123!"), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	demoUser := &models.User{
+		ID:           uuid.New(),
+		Username:     "demo",
+		PasswordHash: string(hashedPassword),
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	if err := userRepo.Create(ctx, demoUser); err != nil {
+		return err
+	}
+	log.Println("Created demo user account")
+
+	// Create sample notes
+	// Note 1: Welcome note (pinned)
+	welcomeNote := &models.Note{
+		ID:        uuid.New(),
+		UserID:    demoUser.ID,
+		Title:     "Welcome to Notes!",
+		Content:   "This is your personal notes app. Create text notes or checklists, and they'll sync across all your devices in real-time.\n\nFeel free to explore - create, edit, and delete notes to see how it works!",
+		NoteType:  models.NoteTypeNote,
+		IsPinned:  true,
+		SortOrder: 0,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := noteRepo.Create(ctx, welcomeNote); err != nil {
+		log.Printf("[WARN] Failed to create welcome note: %v", err)
+	}
+
+	// Note 2: Features note
+	featuresNote := &models.Note{
+		ID:        uuid.New(),
+		UserID:    demoUser.ID,
+		Title:     "Features",
+		Content:   "• Real-time sync across devices\n• Text notes and checklists\n• Pin important notes to the top\n• Archive notes you're done with\n• Secure authentication",
+		NoteType:  models.NoteTypeNote,
+		SortOrder: 1,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := noteRepo.Create(ctx, featuresNote); err != nil {
+		log.Printf("[WARN] Failed to create features note: %v", err)
+	}
+
+	// Note 3: Getting Started checklist
+	checklistNote := &models.Note{
+		ID:        uuid.New(),
+		UserID:    demoUser.ID,
+		Title:     "Getting Started",
+		NoteType:  models.NoteTypeChecklist,
+		SortOrder: 2,
+		CreatedAt: now,
+		UpdatedAt: now,
+		ChecklistItems: []models.ChecklistItem{
+			{ID: uuid.New(), Text: "Try creating a new note", IsCompleted: false, SortOrder: 0, CreatedAt: now, UpdatedAt: now},
+			{ID: uuid.New(), Text: "Pin an important note", IsCompleted: false, SortOrder: 1, CreatedAt: now, UpdatedAt: now},
+			{ID: uuid.New(), Text: "Archive a note you're done with", IsCompleted: false, SortOrder: 2, CreatedAt: now, UpdatedAt: now},
+			{ID: uuid.New(), Text: "Check out the settings", IsCompleted: false, SortOrder: 3, CreatedAt: now, UpdatedAt: now},
+		},
+	}
+	if err := noteRepo.Create(ctx, checklistNote); err != nil {
+		log.Printf("[WARN] Failed to create checklist note: %v", err)
+	}
+
+	log.Println("Created sample notes for demo account")
+	return nil
 }

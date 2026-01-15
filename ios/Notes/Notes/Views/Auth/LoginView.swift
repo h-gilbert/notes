@@ -4,7 +4,6 @@ struct LoginView: View {
     @State private var authService = AuthService.shared
     @State private var username = ""
     @State private var password = ""
-    @State private var showingRegister = false
 
     var body: some View {
         NavigationStack {
@@ -63,25 +62,42 @@ struct LoginView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(username.isEmpty || password.isEmpty || authService.isLoading)
+
+                    // Divider
+                    HStack {
+                        Rectangle()
+                            .fill(Color.secondary.opacity(0.3))
+                            .frame(height: 1)
+                        Text("or")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Rectangle()
+                            .fill(Color.secondary.opacity(0.3))
+                            .frame(height: 1)
+                    }
+
+                    // Demo button
+                    Button {
+                        Task {
+                            try? await authService.login(username: "demo", password: "DemoPassword123!")
+                        }
+                    } label: {
+                        Group {
+                            if authService.isLoading {
+                                ProgressView()
+                            } else {
+                                Text("Try Demo")
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(authService.isLoading)
                 }
                 .padding(.horizontal, 32)
 
                 Spacer()
-
-                // Register link
-                HStack {
-                    Text("Don't have an account?")
-                        .foregroundStyle(.secondary)
-                    Button("Sign Up") {
-                        authService.clearError()
-                        showingRegister = true
-                    }
-                }
-                .font(.subheadline)
-                .padding(.bottom, 32)
-            }
-            .navigationDestination(isPresented: $showingRegister) {
-                RegisterView()
             }
         }
     }
