@@ -49,7 +49,7 @@ type LogoutRequest struct {
 }
 
 type ChangePasswordRequest struct {
-	CurrentPassword string `json:"current_password" binding:"required,min=6,max=128"`
+	CurrentPassword string `json:"current_password" binding:"required,min=1,max=128"`
 	NewPassword     string `json:"new_password" binding:"required,min=12,max=128"`
 }
 

@@ -63,8 +63,11 @@ enum CertificatePinningConfig {
         //
         // Include at least 2 pins: current cert + backup cert for rotation
         return [
-            // notes.hamishgilbert.com certificate (generated 2026-01-09)
-            "gXP2zdjWMTp7cLBOgHatnMUsbhM3tUSGKuqIePzNvQk="
+            // Primary: notes.hamishgilbert.com certificate (generated 2026-01-09)
+            "gXP2zdjWMTp7cLBOgHatnMUsbhM3tUSGKuqIePzNvQk=",
+            // Backup: Add your backup/next certificate's public key hash here before rotating certs
+            // Generate with: openssl s_client -connect YOUR_DOMAIN:443 -servername YOUR_DOMAIN 2>/dev/null | \
+            //   openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64
         ]
         #endif
     }

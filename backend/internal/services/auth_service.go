@@ -210,8 +210,8 @@ func (s *AuthService) checkTokenRevoked(ctx context.Context, claims *Claims, use
 		revoked, err := s.blacklistRepo.IsTokenRevoked(ctx, claims.ID)
 		if err != nil {
 			log.Printf("[ERROR] Failed to check token blacklist: %v", err)
-			// Fail open for now - in production you might want to fail closed
-			return nil
+			// Fail closed - reject token when we can't verify revocation status
+			return ErrInvalidToken
 		}
 		if revoked {
 			log.Printf("[SECURITY] Revoked token used for user: %s", userID.String())
@@ -223,7 +223,8 @@ func (s *AuthService) checkTokenRevoked(ctx context.Context, claims *Claims, use
 	revokeAllTime, err := s.blacklistRepo.GetUserRevokeAllTime(ctx, userID)
 	if err != nil {
 		log.Printf("[ERROR] Failed to check revoke-all time: %v", err)
-		return nil
+		// Fail closed - reject token when we can't verify revocation status
+		return ErrInvalidToken
 	}
 	if !revokeAllTime.IsZero() && claims.IssuedAt != nil {
 		if claims.IssuedAt.Time.Before(revokeAllTime) {

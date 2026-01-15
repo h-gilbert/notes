@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"log"
 	"net/http"
 	"strings"
 
@@ -51,8 +50,7 @@ func NewWebSocketHandler(hub *ws.Hub, authService *services.AuthService, allowed
 func (h *WebSocketHandler) HandleWebSocket(c *gin.Context) {
 	// Get token from (in order of preference):
 	// 1. Sec-WebSocket-Protocol header (most secure - not logged, not in URL)
-	// 2. Authorization header
-	// 3. Query parameter (legacy, least secure)
+	// 2. Authorization header (Bearer token)
 	token := ""
 	useSubprotocol := false
 
@@ -80,14 +78,6 @@ func (h *WebSocketHandler) HandleWebSocket(c *gin.Context) {
 			if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
 				token = parts[1]
 			}
-		}
-	}
-
-	// Fallback to query parameter (legacy support, log warning)
-	if token == "" {
-		token = c.Query("token")
-		if token != "" {
-			log.Printf("[SECURITY] WebSocket connection using query param token (deprecated) from IP: %s", c.ClientIP())
 		}
 	}
 

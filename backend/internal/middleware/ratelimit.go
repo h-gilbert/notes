@@ -110,10 +110,28 @@ type AuthRateLimiter struct {
 // NewAuthRateLimiter creates a rate limiter specifically for auth endpoints
 // with additional protection against brute force attacks
 func NewAuthRateLimiter() *AuthRateLimiter {
-	return &AuthRateLimiter{
+	al := &AuthRateLimiter{
 		RateLimiter:    NewRateLimiter(5, time.Minute, 10), // 5 requests per minute, burst of 10
 		failedAttempts: make(map[string]int),
 		lockoutTime:    make(map[string]time.Time),
+	}
+	go al.cleanupLockouts()
+	return al
+}
+
+// cleanupLockouts removes expired lockout entries periodically
+func (al *AuthRateLimiter) cleanupLockouts() {
+	ticker := time.NewTicker(5 * time.Minute)
+	for range ticker.C {
+		al.mu.Lock()
+		now := time.Now()
+		for key, lockout := range al.lockoutTime {
+			if now.After(lockout) {
+				delete(al.lockoutTime, key)
+				delete(al.failedAttempts, key)
+			}
+		}
+		al.mu.Unlock()
 	}
 }
 
