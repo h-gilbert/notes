@@ -341,3 +341,19 @@ func (r *NoteRepository) getChecklistItems(ctx context.Context, noteID uuid.UUID
 
 	return items, nil
 }
+
+// HardDeleteAllByUserID permanently deletes all notes for a user (used for demo account reset)
+func (r *NoteRepository) HardDeleteAllByUserID(ctx context.Context, userID uuid.UUID) error {
+	// Delete checklist items first (foreign key constraint)
+	_, err := r.pool.Exec(ctx, `
+		DELETE FROM checklist_items
+		WHERE note_id IN (SELECT id FROM notes WHERE user_id = $1)
+	`, userID)
+	if err != nil {
+		return err
+	}
+
+	// Delete notes
+	_, err = r.pool.Exec(ctx, `DELETE FROM notes WHERE user_id = $1`, userID)
+	return err
+}

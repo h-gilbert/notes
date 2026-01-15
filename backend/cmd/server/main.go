@@ -226,7 +226,7 @@ func seedDemoAccount(ctx context.Context, userRepo *repository.UserRepository, n
 	// Check if demo user already exists
 	existingUser, err := userRepo.GetByUsername(ctx, "demo")
 	if err == nil {
-		// Demo user exists - ensure password is correct
+		// Demo user exists - ensure password is correct and reset notes
 		hashedPassword, hashErr := bcrypt.GenerateFromPassword([]byte(demoPassword), bcrypt.DefaultCost)
 		if hashErr != nil {
 			return hashErr
@@ -236,6 +236,12 @@ func seedDemoAccount(ctx context.Context, userRepo *repository.UserRepository, n
 		} else {
 			log.Println("Demo account password updated")
 		}
+
+		// Reset demo notes
+		if deleteErr := noteRepo.HardDeleteAllByUserID(ctx, existingUser.ID); deleteErr != nil {
+			log.Printf("[WARN] Failed to delete demo notes: %v", deleteErr)
+		}
+		createDemoNotes(ctx, noteRepo, existingUser.ID)
 		return nil
 	}
 	if !errors.Is(err, repository.ErrUserNotFound) {
@@ -262,11 +268,18 @@ func seedDemoAccount(ctx context.Context, userRepo *repository.UserRepository, n
 	}
 	log.Println("Created demo user account")
 
-	// Create sample notes
+	createDemoNotes(ctx, noteRepo, demoUser.ID)
+	return nil
+}
+
+// createDemoNotes creates sample notes for the demo account
+func createDemoNotes(ctx context.Context, noteRepo *repository.NoteRepository, userID uuid.UUID) {
+	now := time.Now()
+
 	// Note 1: Welcome note (pinned)
 	welcomeNote := &models.Note{
 		ID:        uuid.New(),
-		UserID:    demoUser.ID,
+		UserID:    userID,
 		Title:     "Welcome to Notes!",
 		Content:   "This is your personal notes app. Create text notes or checklists, and they'll sync across all your devices in real-time.\n\nFeel free to explore - create, edit, and delete notes to see how it works!",
 		NoteType:  models.NoteTypeNote,
@@ -282,7 +295,7 @@ func seedDemoAccount(ctx context.Context, userRepo *repository.UserRepository, n
 	// Note 2: Features note
 	featuresNote := &models.Note{
 		ID:        uuid.New(),
-		UserID:    demoUser.ID,
+		UserID:    userID,
 		Title:     "Features",
 		Content:   "• Real-time sync across devices\n• Text notes and checklists\n• Pin important notes to the top\n• Archive notes you're done with\n• Secure authentication",
 		NoteType:  models.NoteTypeNote,
@@ -297,7 +310,7 @@ func seedDemoAccount(ctx context.Context, userRepo *repository.UserRepository, n
 	// Note 3: Getting Started checklist
 	checklistNote := &models.Note{
 		ID:        uuid.New(),
-		UserID:    demoUser.ID,
+		UserID:    userID,
 		Title:     "Getting Started",
 		NoteType:  models.NoteTypeChecklist,
 		SortOrder: 2,
@@ -315,5 +328,4 @@ func seedDemoAccount(ctx context.Context, userRepo *repository.UserRepository, n
 	}
 
 	log.Println("Created sample notes for demo account")
-	return nil
 }
