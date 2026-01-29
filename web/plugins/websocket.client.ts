@@ -5,8 +5,8 @@ export default defineNuxtPlugin(() => {
   // Track the last token we connected with to avoid duplicate connections
   let lastConnectedToken: string | null = null
 
-  // Load stored auth on startup
-  authStore.loadStoredAuth()
+  // Note: loadStoredAuth() is called in app.vue, no need to call it here
+  // Calling it twice causes duplicate refresh token requests which fail due to token rotation
 
   // Single watcher for both auth state and token changes
   watch(

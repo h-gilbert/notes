@@ -9,6 +9,8 @@ interface AuthState {
   expiresAt: number | null // timestamp when access token expires
   isLoading: boolean
   refreshTimer: ReturnType<typeof setTimeout> | null
+  isRefreshing: boolean // Guard against concurrent refresh attempts
+  authInitialized: boolean // Guard against duplicate loadStoredAuth calls
 }
 
 // Refresh token 5 minutes before expiry
@@ -32,7 +34,9 @@ export const useAuthStore = defineStore('auth', {
     refreshToken: null,
     expiresAt: null,
     isLoading: false,
-    refreshTimer: null
+    refreshTimer: null,
+    isRefreshing: false,
+    authInitialized: false
   }),
 
   getters: {
@@ -78,6 +82,8 @@ export const useAuthStore = defineStore('auth', {
       this.refreshToken = null
       this.expiresAt = null
       this.user = null
+      this.isRefreshing = false
+      // Note: Don't reset authInitialized here - it should only be set once per app lifecycle
 
       // Clear cookies with same options
       const cookieOptions = getCookieOptions()
@@ -93,6 +99,12 @@ export const useAuthStore = defineStore('auth', {
 
     // Called during app init to hydrate state from cookies
     loadStoredAuth() {
+      // Prevent duplicate initialization (can happen if called from multiple places)
+      if (this.authInitialized) {
+        return
+      }
+      this.authInitialized = true
+
       const cookieOptions = getCookieOptions()
       const accessTokenCookie = useCookie<string | null>('auth_access_token', cookieOptions)
       const refreshTokenCookie = useCookie<string | null>('auth_refresh_token', cookieOptions)
@@ -124,11 +136,17 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async doRefreshToken() {
+      // Prevent concurrent refresh attempts (causes 401 due to token rotation)
+      if (this.isRefreshing) {
+        return
+      }
+
       if (!this.refreshToken) {
         this.logout()
         return
       }
 
+      this.isRefreshing = true
       try {
         const response = await api.refreshToken(this.refreshToken)
         this.setAuthData(response.access_token, response.refresh_token, response.expires_in, response.user)
@@ -136,6 +154,8 @@ export const useAuthStore = defineStore('auth', {
       } catch {
         // Token refresh failed - logout user
         this.logout()
+      } finally {
+        this.isRefreshing = false
       }
     },
 
