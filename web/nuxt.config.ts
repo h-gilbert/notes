@@ -3,6 +3,10 @@ export default defineNuxtConfig({
 
   devtools: { enabled: true },
 
+  devServer: {
+    port: 3030
+  },
+
   modules: ['@pinia/nuxt'],
 
   components: {
