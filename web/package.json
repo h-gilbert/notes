@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@nuxt/devtools": "latest",
+    "commander": "^13.1.0",
     "typescript": "^5.3.3"
   }
 }
