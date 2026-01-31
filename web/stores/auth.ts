@@ -2,17 +2,6 @@ import { defineStore } from 'pinia'
 import type { User } from '~/types'
 import { api } from '~/utils/api'
 
-interface AuthState {
-  user: User | null
-  accessToken: string | null
-  refreshToken: string | null
-  expiresAt: number | null // timestamp when access token expires
-  isLoading: boolean
-  refreshTimer: ReturnType<typeof setTimeout> | null
-  isRefreshing: boolean // Guard against concurrent refresh attempts
-  authInitialized: boolean // Guard against duplicate loadStoredAuth calls
-}
-
 // Refresh token 5 minutes before expiry
 const TOKEN_REFRESH_BUFFER = 5 * 60 * 1000 // 5 minutes in ms
 
@@ -27,210 +16,227 @@ const getCookieOptions = () => {
   }
 }
 
-export const useAuthStore = defineStore('auth', {
-  state: (): AuthState => ({
-    user: null,
-    accessToken: null,
-    refreshToken: null,
-    expiresAt: null,
-    isLoading: false,
-    refreshTimer: null,
-    isRefreshing: false,
-    authInitialized: false
-  }),
+export const useAuthStore = defineStore('auth', () => {
+  // Define cookie refs at setup level (correct context for useCookie)
+  // This ensures maxAge and other options are properly applied
+  const cookieOptions = getCookieOptions()
+  const accessTokenCookie = useCookie<string | null>('auth_access_token', cookieOptions)
+  const refreshTokenCookie = useCookie<string | null>('auth_refresh_token', cookieOptions)
+  const userCookie = useCookie<string | null>('auth_user', cookieOptions)
 
-  getters: {
-    isAuthenticated: (state) => !!state.accessToken,
-    token: (state) => state.accessToken
-  },
+  // State
+  const user = ref<User | null>(null)
+  const accessToken = ref<string | null>(null)
+  const refreshToken = ref<string | null>(null)
+  const expiresAt = ref<number | null>(null)
+  const isLoading = ref(false)
+  const refreshTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+  const isRefreshing = ref(false)
+  const authInitialized = ref(false)
 
-  actions: {
-    async login(username: string, password: string) {
-      this.isLoading = true
-      try {
-        const response = await api.login({ username, password })
-        this.setAuthData(response.access_token, response.refresh_token, response.expires_in, response.user)
-        this.scheduleTokenRefresh()
-      } finally {
-        this.isLoading = false
-      }
-    },
+  // Getters
+  const isAuthenticated = computed(() => !!accessToken.value)
+  const token = computed(() => accessToken.value)
 
-    async register(username: string, password: string) {
-      this.isLoading = true
-      try {
-        const response = await api.register({ username, password })
-        this.setAuthData(response.access_token, response.refresh_token, response.expires_in, response.user)
-        this.scheduleTokenRefresh()
-      } finally {
-        this.isLoading = false
-      }
-    },
+  // Helper functions
+  function getTokenExpirationTimestamp(token: string): number | null {
+    try {
+      const parts = token.split('.')
+      if (parts.length !== 3) return null
 
-    async changePassword(currentPassword: string, newPassword: string) {
-      this.isLoading = true
-      try {
-        await api.changePassword({ current_password: currentPassword, new_password: newPassword })
-      } finally {
-        this.isLoading = false
-      }
-    },
-
-    logout() {
-      this.cancelScheduledRefresh()
-      this.accessToken = null
-      this.refreshToken = null
-      this.expiresAt = null
-      this.user = null
-      this.isRefreshing = false
-      // Note: Don't reset authInitialized here - it should only be set once per app lifecycle
-
-      // Clear cookies with same options
-      const cookieOptions = getCookieOptions()
-      const accessTokenCookie = useCookie('auth_access_token', cookieOptions)
-      const refreshTokenCookie = useCookie('auth_refresh_token', cookieOptions)
-      const userCookie = useCookie('auth_user', cookieOptions)
-      accessTokenCookie.value = null
-      refreshTokenCookie.value = null
-      userCookie.value = null
-
-      api.setToken(null)
-    },
-
-    // Called during app init to hydrate state from cookies
-    loadStoredAuth() {
-      // Prevent duplicate initialization (can happen if called from multiple places)
-      if (this.authInitialized) {
-        return
-      }
-      this.authInitialized = true
-
-      const cookieOptions = getCookieOptions()
-      const accessTokenCookie = useCookie<string | null>('auth_access_token', cookieOptions)
-      const refreshTokenCookie = useCookie<string | null>('auth_refresh_token', cookieOptions)
-      const userCookie = useCookie<string | null>('auth_user', cookieOptions)
-
-      // If we have a refresh token, we can try to restore the session
-      if (refreshTokenCookie.value) {
-        this.refreshToken = refreshTokenCookie.value
-
-        if (userCookie.value) {
-          try {
-            this.user = JSON.parse(userCookie.value)
-          } catch {
-            userCookie.value = null
-          }
-        }
-
-        // Check if access token is still valid
-        if (accessTokenCookie.value && !this.isTokenExpired(accessTokenCookie.value)) {
-          this.accessToken = accessTokenCookie.value
-          this.expiresAt = this.getTokenExpirationTimestamp(accessTokenCookie.value)
-          api.setToken(accessTokenCookie.value)
-          this.scheduleTokenRefresh()
-        } else {
-          // Access token expired or missing, try to refresh
-          this.doRefreshToken()
-        }
-      }
-    },
-
-    async doRefreshToken() {
-      // Prevent concurrent refresh attempts (causes 401 due to token rotation)
-      if (this.isRefreshing) {
-        return
+      let payload = parts[1]
+      payload = payload.replace(/-/g, '+').replace(/_/g, '/')
+      const padding = payload.length % 4
+      if (padding) {
+        payload += '='.repeat(4 - padding)
       }
 
-      if (!this.refreshToken) {
-        this.logout()
-        return
-      }
+      const decoded = JSON.parse(atob(payload))
+      if (!decoded.exp) return null
 
-      this.isRefreshing = true
-      try {
-        const response = await api.refreshToken(this.refreshToken)
-        this.setAuthData(response.access_token, response.refresh_token, response.expires_in, response.user)
-        this.scheduleTokenRefresh()
-      } catch {
-        // Token refresh failed - logout user
-        this.logout()
-      } finally {
-        this.isRefreshing = false
-      }
-    },
-
-    setAuthData(accessToken: string, refreshToken: string, expiresIn: number, user: User) {
-      this.accessToken = accessToken
-      this.refreshToken = refreshToken
-      this.expiresAt = Date.now() + (expiresIn * 1000)
-      this.user = user
-
-      // Persist to cookies with security options
-      const cookieOptions = getCookieOptions()
-      const accessTokenCookie = useCookie('auth_access_token', cookieOptions)
-      const refreshTokenCookie = useCookie('auth_refresh_token', cookieOptions)
-      const userCookie = useCookie('auth_user', cookieOptions)
-
-      accessTokenCookie.value = accessToken
-      refreshTokenCookie.value = refreshToken
-      userCookie.value = JSON.stringify(user)
-
-      api.setToken(accessToken)
-    },
-
-    scheduleTokenRefresh() {
-      this.cancelScheduledRefresh()
-
-      if (!this.expiresAt) return
-
-      // Calculate when to refresh (5 minutes before expiry)
-      const refreshTime = this.expiresAt - Date.now() - TOKEN_REFRESH_BUFFER
-
-      if (refreshTime <= 0) {
-        // Token already expired or about to expire, refresh now
-        this.doRefreshToken()
-        return
-      }
-
-      // Schedule refresh
-      this.refreshTimer = setTimeout(() => {
-        this.doRefreshToken()
-      }, refreshTime)
-    },
-
-    cancelScheduledRefresh() {
-      if (this.refreshTimer) {
-        clearTimeout(this.refreshTimer)
-        this.refreshTimer = null
-      }
-    },
-
-    // Parse JWT and get expiration timestamp
-    getTokenExpirationTimestamp(token: string): number | null {
-      try {
-        const parts = token.split('.')
-        if (parts.length !== 3) return null
-
-        let payload = parts[1]
-        payload = payload.replace(/-/g, '+').replace(/_/g, '/')
-        const padding = payload.length % 4
-        if (padding) {
-          payload += '='.repeat(4 - padding)
-        }
-
-        const decoded = JSON.parse(atob(payload))
-        if (!decoded.exp) return null
-
-        return decoded.exp * 1000
-      } catch {
-        return null
-      }
-    },
-
-    isTokenExpired(token: string): boolean {
-      const expTimestamp = this.getTokenExpirationTimestamp(token)
-      if (!expTimestamp) return true
-      return expTimestamp < Date.now()
+      return decoded.exp * 1000
+    } catch {
+      return null
     }
+  }
+
+  function isTokenExpired(token: string): boolean {
+    const expTimestamp = getTokenExpirationTimestamp(token)
+    if (!expTimestamp) return true
+    return expTimestamp < Date.now()
+  }
+
+  function cancelScheduledRefresh() {
+    if (refreshTimer.value) {
+      clearTimeout(refreshTimer.value)
+      refreshTimer.value = null
+    }
+  }
+
+  function setAuthData(newAccessToken: string, newRefreshToken: string, expiresIn: number, userData: User) {
+    accessToken.value = newAccessToken
+    refreshToken.value = newRefreshToken
+    expiresAt.value = Date.now() + (expiresIn * 1000)
+    user.value = userData
+
+    // Write to cookies using the refs defined at setup level
+    // This ensures cookie options (including maxAge) are properly applied
+    accessTokenCookie.value = newAccessToken
+    refreshTokenCookie.value = newRefreshToken
+    userCookie.value = JSON.stringify(userData)
+
+    api.setToken(newAccessToken)
+  }
+
+  function scheduleTokenRefresh() {
+    cancelScheduledRefresh()
+
+    if (!expiresAt.value) return
+
+    // Calculate when to refresh (5 minutes before expiry)
+    const refreshTime = expiresAt.value - Date.now() - TOKEN_REFRESH_BUFFER
+
+    if (refreshTime <= 0) {
+      // Token already expired or about to expire, refresh now
+      doRefreshToken()
+      return
+    }
+
+    // Schedule refresh
+    refreshTimer.value = setTimeout(() => {
+      doRefreshToken()
+    }, refreshTime)
+  }
+
+  async function doRefreshToken() {
+    // Prevent concurrent refresh attempts (causes 401 due to token rotation)
+    if (isRefreshing.value) {
+      return
+    }
+
+    if (!refreshToken.value) {
+      logout()
+      return
+    }
+
+    isRefreshing.value = true
+    try {
+      const response = await api.refreshToken(refreshToken.value)
+      setAuthData(response.access_token, response.refresh_token, response.expires_in, response.user)
+      scheduleTokenRefresh()
+    } catch {
+      // Token refresh failed - logout user
+      logout()
+    } finally {
+      isRefreshing.value = false
+    }
+  }
+
+  function logout() {
+    cancelScheduledRefresh()
+    accessToken.value = null
+    refreshToken.value = null
+    expiresAt.value = null
+    user.value = null
+    isRefreshing.value = false
+    // Note: Don't reset authInitialized here - it should only be set once per app lifecycle
+
+    // Clear cookies using the refs defined at setup level
+    accessTokenCookie.value = null
+    refreshTokenCookie.value = null
+    userCookie.value = null
+
+    api.setToken(null)
+  }
+
+  // Called during app init to hydrate state from cookies
+  function loadStoredAuth() {
+    // Prevent duplicate initialization (can happen if called from multiple places)
+    if (authInitialized.value) {
+      return
+    }
+    authInitialized.value = true
+
+    // If we have a refresh token, we can try to restore the session
+    if (refreshTokenCookie.value) {
+      refreshToken.value = refreshTokenCookie.value
+
+      if (userCookie.value) {
+        try {
+          user.value = JSON.parse(userCookie.value)
+        } catch {
+          userCookie.value = null
+        }
+      }
+
+      // Check if access token is still valid
+      if (accessTokenCookie.value && !isTokenExpired(accessTokenCookie.value)) {
+        accessToken.value = accessTokenCookie.value
+        expiresAt.value = getTokenExpirationTimestamp(accessTokenCookie.value)
+        api.setToken(accessTokenCookie.value)
+        scheduleTokenRefresh()
+      } else {
+        // Access token expired or missing, try to refresh
+        doRefreshToken()
+      }
+    }
+  }
+
+  async function login(username: string, password: string) {
+    isLoading.value = true
+    try {
+      const response = await api.login({ username, password })
+      setAuthData(response.access_token, response.refresh_token, response.expires_in, response.user)
+      scheduleTokenRefresh()
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function register(username: string, password: string) {
+    isLoading.value = true
+    try {
+      const response = await api.register({ username, password })
+      setAuthData(response.access_token, response.refresh_token, response.expires_in, response.user)
+      scheduleTokenRefresh()
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function changePassword(currentPassword: string, newPassword: string) {
+    isLoading.value = true
+    try {
+      await api.changePassword({ current_password: currentPassword, new_password: newPassword })
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  return {
+    // State
+    user,
+    accessToken,
+    refreshToken,
+    expiresAt,
+    isLoading,
+    refreshTimer,
+    isRefreshing,
+    authInitialized,
+    // Getters
+    isAuthenticated,
+    token,
+    // Actions
+    login,
+    register,
+    changePassword,
+    logout,
+    loadStoredAuth,
+    doRefreshToken,
+    setAuthData,
+    scheduleTokenRefresh,
+    cancelScheduledRefresh,
+    getTokenExpirationTimestamp,
+    isTokenExpired
   }
 })
