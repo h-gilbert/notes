@@ -12,7 +12,7 @@
   "dependencies": {
     "@pinia/nuxt": "^0.11.3",
     "@yeger/vue-masonry-wall": "^5.1.5",
-    "nuxt": "^4.3.0",
+    "nuxt": "^4.3.1",
     "pinia": "^3.0.4",
     "vue": "^3.5.27",
     "vuedraggable": "^4.1.0"
@@ -21,5 +21,27 @@
     "@nuxt/devtools": "latest",
     "commander": "^13.1.0",
     "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "@isaacs/brace-expansion": "5.0.1",
+    "devalue": "5.6.3",
+    "nanotar": "0.3.0",
+    "rollup": "4.59.0",
+    "serialize-javascript": "7.0.4",
+    "svgo": "4.0.1",
+    "tar": "7.5.11",
+    "@vercel/nft": {
+      "glob": {
+        "minimatch": "10.2.4"
+      }
+    },
+    "archiver-utils": {
+      "glob": {
+        "minimatch": "9.0.9"
+      }
+    },
+    "readdir-glob": {
+      "minimatch": "5.1.9"
+    }
   }
 }
