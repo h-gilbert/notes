@@ -1,10 +1,10 @@
-export default defineNuxtRouteMiddleware((to) => {
+export default defineNuxtRouteMiddleware(async (to) => {
   const authStore = useAuthStore()
 
   // Ensure auth state is loaded from cookies before checking
   // This is needed because middleware may run before app.vue setup
   if (!authStore.authInitialized) {
-    authStore.loadStoredAuth()
+    await authStore.loadStoredAuth()
   }
 
   // Pages that don't require auth

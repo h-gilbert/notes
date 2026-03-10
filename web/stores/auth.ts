@@ -33,6 +33,9 @@ export const useAuthStore = defineStore('auth', () => {
   const refreshTimer = ref<ReturnType<typeof setTimeout> | null>(null)
   const isRefreshing = ref(false)
   const authInitialized = ref(false)
+  const isRestoringAuth = ref(false)
+  let refreshPromise: Promise<void> | null = null
+  let restoreAuthPromise: Promise<void> | null = null
 
   // Getters
   const isAuthenticated = computed(() => !!accessToken.value)
@@ -108,77 +111,108 @@ export const useAuthStore = defineStore('auth', () => {
     }, refreshTime)
   }
 
-  async function doRefreshToken() {
-    // Prevent concurrent refresh attempts (causes 401 due to token rotation)
-    if (isRefreshing.value) {
-      return
-    }
-
-    if (!refreshToken.value) {
-      logout()
-      return
-    }
-
-    isRefreshing.value = true
-    try {
-      const response = await api.refreshToken(refreshToken.value)
-      setAuthData(response.access_token, response.refresh_token, response.expires_in, response.user)
-      scheduleTokenRefresh()
-    } catch {
-      // Token refresh failed - logout user
-      logout()
-    } finally {
-      isRefreshing.value = false
-    }
-  }
-
-  function logout() {
+  function clearAuthState(clearCookies = false) {
     cancelScheduledRefresh()
     accessToken.value = null
     refreshToken.value = null
     expiresAt.value = null
     user.value = null
     isRefreshing.value = false
-    // Note: Don't reset authInitialized here - it should only be set once per app lifecycle
-
-    // Clear cookies using the refs defined at setup level
-    accessTokenCookie.value = null
-    refreshTokenCookie.value = null
-    userCookie.value = null
 
     api.setToken(null)
+
+    if (clearCookies) {
+      accessTokenCookie.value = null
+      refreshTokenCookie.value = null
+      userCookie.value = null
+    }
+  }
+
+  async function doRefreshToken() {
+    if (refreshPromise) {
+      return refreshPromise
+    }
+
+    refreshPromise = (async () => {
+      if (!refreshToken.value) {
+        logout()
+        return
+      }
+
+      isRefreshing.value = true
+      try {
+        const response = await api.refreshToken(refreshToken.value)
+        setAuthData(response.access_token, response.refresh_token, response.expires_in, response.user)
+        scheduleTokenRefresh()
+      } catch {
+        // Token refresh failed - logout user
+        logout()
+      } finally {
+        isRefreshing.value = false
+      }
+    })()
+
+    try {
+      await refreshPromise
+    } finally {
+      refreshPromise = null
+    }
+  }
+
+  function logout() {
+    // Note: Don't reset authInitialized here - it should only be set once per app lifecycle
+    clearAuthState(true)
   }
 
   // Called during app init to hydrate state from cookies
-  function loadStoredAuth() {
-    // Prevent duplicate initialization (can happen if called from multiple places)
+  async function loadStoredAuth() {
     if (authInitialized.value) {
       return
     }
-    authInitialized.value = true
 
-    // If we have a refresh token, we can try to restore the session
-    if (refreshTokenCookie.value) {
-      refreshToken.value = refreshTokenCookie.value
+    if (restoreAuthPromise) {
+      return restoreAuthPromise
+    }
 
-      if (userCookie.value) {
-        try {
-          user.value = JSON.parse(userCookie.value)
-        } catch {
-          userCookie.value = null
+    restoreAuthPromise = (async () => {
+      isRestoringAuth.value = true
+
+      try {
+        if (!refreshTokenCookie.value) {
+          clearAuthState()
+          return
         }
-      }
 
-      // Check if access token is still valid
-      if (accessTokenCookie.value && !isTokenExpired(accessTokenCookie.value)) {
-        accessToken.value = accessTokenCookie.value
-        expiresAt.value = getTokenExpirationTimestamp(accessTokenCookie.value)
-        api.setToken(accessTokenCookie.value)
-        scheduleTokenRefresh()
-      } else {
-        // Access token expired or missing, try to refresh
-        doRefreshToken()
+        refreshToken.value = refreshTokenCookie.value
+
+        if (userCookie.value) {
+          try {
+            user.value = JSON.parse(userCookie.value)
+          } catch {
+            user.value = null
+            userCookie.value = null
+          }
+        }
+
+        if (accessTokenCookie.value && !isTokenExpired(accessTokenCookie.value)) {
+          accessToken.value = accessTokenCookie.value
+          expiresAt.value = getTokenExpirationTimestamp(accessTokenCookie.value)
+          api.setToken(accessTokenCookie.value)
+          scheduleTokenRefresh()
+          return
+        }
+
+        await doRefreshToken()
+      } finally {
+        authInitialized.value = true
+        isRestoringAuth.value = false
       }
+    })()
+
+    try {
+      await restoreAuthPromise
+    } finally {
+      restoreAuthPromise = null
     }
   }
 
@@ -223,6 +257,7 @@ export const useAuthStore = defineStore('auth', () => {
     refreshTimer,
     isRefreshing,
     authInitialized,
+    isRestoringAuth,
     // Getters
     isAuthenticated,
     token,
