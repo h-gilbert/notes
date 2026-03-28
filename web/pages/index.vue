@@ -132,14 +132,17 @@ const handleGlobalKeydown = async (e: KeyboardEvent) => {
   openNote(note, true)  // Focus content since user started typing
 }
 
-// Fetch notes on mount
+// Fetch notes on mount (IndexedDB data already loaded by offline-sync plugin)
 onMounted(async () => {
   document.addEventListener('keydown', handleGlobalKeydown)
 
-  try {
-    await notesStore.fetchNotes()
-  } catch {
-    // Notes fetch failed - store will track sync error state
+  const { isOnline } = useNetworkStatus()
+  if (isOnline.value) {
+    try {
+      await notesStore.fetchNotes()
+    } catch {
+      // Notes fetch failed - IndexedDB data is still displayed
+    }
   }
 })
 

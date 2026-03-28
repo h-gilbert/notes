@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import type { User } from '~/types'
 import { api } from '~/utils/api'
+import { notesDB } from '~/utils/notesDB'
 
 // Refresh token 5 minutes before expiry
 const TOKEN_REFRESH_BUFFER = 5 * 60 * 1000 // 5 minutes in ms
@@ -24,6 +25,9 @@ export const useAuthStore = defineStore('auth', () => {
   const refreshTokenCookie = useCookie<string | null>('auth_refresh_token', cookieOptions)
   const userCookie = useCookie<string | null>('auth_user', cookieOptions)
 
+  // Network status for offline-safe auth
+  const { isOnline } = useNetworkStatus()
+
   // State
   const user = ref<User | null>(null)
   const accessToken = ref<string | null>(null)
@@ -34,11 +38,12 @@ export const useAuthStore = defineStore('auth', () => {
   const isRefreshing = ref(false)
   const authInitialized = ref(false)
   const isRestoringAuth = ref(false)
+  const isOfflineAuthenticated = ref(false)
   let refreshPromise: Promise<void> | null = null
   let restoreAuthPromise: Promise<void> | null = null
 
   // Getters
-  const isAuthenticated = computed(() => !!accessToken.value)
+  const isAuthenticated = computed(() => !!accessToken.value || isOfflineAuthenticated.value)
   const token = computed(() => accessToken.value)
 
   // Helper functions
@@ -139,14 +144,28 @@ export const useAuthStore = defineStore('auth', () => {
         return
       }
 
+      // If offline, keep cached auth state instead of making a failing network request
+      if (!isOnline.value) {
+        if (user.value) {
+          isOfflineAuthenticated.value = true
+        }
+        return
+      }
+
       isRefreshing.value = true
       try {
         const response = await api.refreshToken(refreshToken.value)
         setAuthData(response.access_token, response.refresh_token, response.expires_in, response.user)
+        isOfflineAuthenticated.value = false
         scheduleTokenRefresh()
       } catch {
-        // Token refresh failed - logout user
-        logout()
+        // If we went offline during the request, keep cached auth
+        if (!isOnline.value && user.value) {
+          isOfflineAuthenticated.value = true
+        } else {
+          // Genuinely failed (bad token, server rejected) - logout
+          logout()
+        }
       } finally {
         isRefreshing.value = false
       }
@@ -161,8 +180,17 @@ export const useAuthStore = defineStore('auth', () => {
 
   function logout() {
     // Note: Don't reset authInitialized here - it should only be set once per app lifecycle
+    isOfflineAuthenticated.value = false
     clearAuthState(true)
+    notesDB.clearNotes()
   }
+
+  // When connectivity is restored, retry token refresh if we were offline-authenticated
+  watch(isOnline, (online) => {
+    if (online && isOfflineAuthenticated.value && refreshToken.value) {
+      doRefreshToken()
+    }
+  })
 
   // Called during app init to hydrate state from cookies
   async function loadStoredAuth() {
@@ -258,6 +286,7 @@ export const useAuthStore = defineStore('auth', () => {
     isRefreshing,
     authInitialized,
     isRestoringAuth,
+    isOfflineAuthenticated,
     // Getters
     isAuthenticated,
     token,

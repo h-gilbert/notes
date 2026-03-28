@@ -1,12 +1,14 @@
 import { defineStore } from 'pinia'
 import type { Note, NoteDTO, ChecklistItem } from '~/types'
 import { api } from '~/utils/api'
+import { notesDB } from '~/utils/notesDB'
 
 interface NotesState {
   notes: Note[]
   lastSyncDate: string | null
   syncState: 'idle' | 'syncing' | 'success' | 'error'
   syncError: string | null
+  pendingDeletions: string[]
 }
 
 export const useNotesStore = defineStore('notes', {
@@ -14,7 +16,8 @@ export const useNotesStore = defineStore('notes', {
     notes: [],
     lastSyncDate: null,
     syncState: 'idle',
-    syncError: null
+    syncError: null,
+    pendingDeletions: []
   }),
 
   getters: {
@@ -58,6 +61,10 @@ export const useNotesStore = defineStore('notes', {
 
         this.lastSyncDate = response.serverTimestamp
         this.syncState = 'success'
+
+        // Persist to IndexedDB
+        await notesDB.putAllNotes(this.notes)
+        await notesDB.setMeta('lastSyncDate', this.lastSyncDate)
       } catch (error) {
         this.syncState = 'error'
         this.syncError = error instanceof Error ? error.message : 'Sync failed'
@@ -85,6 +92,7 @@ export const useNotesStore = defineStore('notes', {
       }
 
       this.notes.push(note)
+      await notesDB.putNote(note)
 
       try {
         const dto = this.noteToDTO(note)
@@ -92,6 +100,7 @@ export const useNotesStore = defineStore('notes', {
         const index = this.notes.findIndex(n => n.id === id)
         if (index !== -1) {
           this.notes[index] = { ...this.dtoToNote(created), syncStatus: 'synced' }
+          await notesDB.putNote(this.notes[index])
         }
       } catch {
         // Keep local note with pending status - will retry on next sync
@@ -107,6 +116,7 @@ export const useNotesStore = defineStore('notes', {
       const index = this.notes.findIndex(n => n.id === note.id)
       if (index !== -1) {
         this.notes[index] = { ...note }
+        await notesDB.putNote(this.notes[index])
       }
 
       try {
@@ -115,6 +125,7 @@ export const useNotesStore = defineStore('notes', {
         const idx = this.notes.findIndex(n => n.id === note.id)
         if (idx !== -1) {
           this.notes[idx] = { ...this.dtoToNote(updated), syncStatus: 'synced' }
+          await notesDB.putNote(this.notes[idx])
         }
       } catch {
         // Keep pending status - will retry on next sync
@@ -126,11 +137,13 @@ export const useNotesStore = defineStore('notes', {
       if (index !== -1) {
         this.notes.splice(index, 1)
       }
+      await notesDB.deleteNote(id)
 
       try {
         await api.deleteNote(id)
       } catch {
-        // Deletion will be retried on next sync
+        this.pendingDeletions.push(id)
+        await notesDB.setMeta('pendingDeletions', this.pendingDeletions)
       }
     },
 
@@ -274,7 +287,7 @@ export const useNotesStore = defineStore('notes', {
       }
     },
 
-    upsertFromDTO(dto: NoteDTO) {
+    async upsertFromDTO(dto: NoteDTO) {
       const index = this.notes.findIndex(n => n.id === dto.id)
       const note = this.dtoToNote(dto)
 
@@ -282,9 +295,62 @@ export const useNotesStore = defineStore('notes', {
         // Only update if server version is newer
         if (new Date(dto.updatedAt) > new Date(this.notes[index].updatedAt)) {
           this.notes[index] = note
+          await notesDB.putNote(note)
         }
       } else {
         this.notes.push(note)
+        await notesDB.putNote(note)
+      }
+    },
+
+    async initFromDB() {
+      await notesDB.open()
+      const stored = await notesDB.getAllNotes()
+      if (stored.length > 0) {
+        this.notes = stored
+      }
+      const lastSync = await notesDB.getMeta('lastSyncDate')
+      if (lastSync) {
+        this.lastSyncDate = lastSync.value
+      }
+      const pendingDeletes = await notesDB.getMeta('pendingDeletions')
+      if (pendingDeletes) {
+        this.pendingDeletions = pendingDeletes.value
+      }
+    },
+
+    async syncPendingChanges() {
+      const pendingNotes = this.notes.filter(n => n.syncStatus === 'pending')
+
+      if (pendingNotes.length === 0 && this.pendingDeletions.length === 0) {
+        await this.fetchNotes()
+        return
+      }
+
+      try {
+        const response = await api.syncNotes({
+          changes: pendingNotes.map(n => this.noteToDTO(n)),
+          deletedIDs: [...this.pendingDeletions],
+          lastSync: this.lastSyncDate ?? undefined
+        })
+
+        for (const dto of response.notes) {
+          this.upsertFromDTO(dto)
+        }
+        for (const id of response.deletedNoteIDs) {
+          const index = this.notes.findIndex(n => n.id === id)
+          if (index !== -1) this.notes.splice(index, 1)
+        }
+
+        this.pendingDeletions = []
+        this.lastSyncDate = response.serverTimestamp
+        this.notes.forEach(n => { n.syncStatus = 'synced' })
+
+        await notesDB.putAllNotes(this.notes)
+        await notesDB.setMeta('lastSyncDate', this.lastSyncDate)
+        await notesDB.setMeta('pendingDeletions', [])
+      } catch {
+        // Will retry next time connectivity is detected
       }
     }
   }
