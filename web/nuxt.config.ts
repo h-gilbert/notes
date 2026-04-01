@@ -20,6 +20,10 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
+  experimental: {
+    payloadExtraction: false
+  },
+
   app: {
     head: {
       title: 'Notes',
