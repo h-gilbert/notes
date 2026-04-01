@@ -44,7 +44,9 @@ export const useNotesStore = defineStore('notes', {
       this.syncError = null
 
       try {
-        const response = await api.fetchNotes(this.lastSyncDate ?? undefined)
+        // If we have no local notes, do a full sync regardless of lastSyncDate
+        const since = this.notes.length === 0 ? undefined : (this.lastSyncDate ?? undefined)
+        const response = await api.fetchNotes(since)
 
         // Process server notes
         for (const dto of response.notes) {
