@@ -1,3 +1,4 @@
+import { toRaw } from 'vue'
 import type { Note } from '~/types'
 
 const DB_NAME = 'notes-app'
@@ -56,7 +57,7 @@ class NotesDB {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(NOTES_STORE, 'readwrite')
       const store = tx.objectStore(NOTES_STORE)
-      store.put(note)
+      store.put(JSON.parse(JSON.stringify(toRaw(note))))
       tx.oncomplete = () => resolve()
       tx.onerror = () => reject(tx.error)
     })
@@ -69,7 +70,7 @@ class NotesDB {
       const store = tx.objectStore(NOTES_STORE)
       store.clear()
       for (const note of notes) {
-        store.put(note)
+        store.put(JSON.parse(JSON.stringify(toRaw(note))))
       }
       tx.oncomplete = () => resolve()
       tx.onerror = () => reject(tx.error)
